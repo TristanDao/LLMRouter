@@ -1,0 +1,15 @@
+# Canonical safety router configuration
+data_path:
+  llm_data: 'data/example_data/llm_candidates/default_llm.json'
+  policies_file: 'policy.csv'
+
+api_endpoint: 'https://api.openai.com/v1'
+service: 'openai'
+use_llm_judge: false
+
+hparam:
+  risk_threshold: 0.75
+  diff_threshold: 0.70
+  local_model: 'qwen-2.5-7b'
+  medium_model: 'gpt-4o-mini'
+  high_model: 'gemini-1.5-pro'

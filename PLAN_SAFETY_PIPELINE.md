@@ -1,0 +1,410 @@
+# Safety Router Golden Dataset Pipeline - Kế hoạch thực hiện
+
+> **Ngày tạo:** 2026-06-17
+> **Ngày cập nhật:** 2026-06-18
+> **Trạng thái:** Đang triển khai
+
+---
+
+## Mục lục
+1. [Mục tiêu](#1-mục-tiêu)
+2. [Trạng thái hiện tại](#2-trạng-thái-hiện-tại)
+3. [Pipeline Flow](#3-pipeline-flow)
+4. [Cấu trúc file](#4-cấu-trúc-file)
+5. [API Configuration](#5-api-configuration)
+6. [Scripts](#6-scripts)
+7. [Usage](#7-usage)
+
+---
+
+## 1. Mục tiêu
+
+Tạo golden dataset để train ML router cho Safety Router.
+
+### Query Generation Models (sinh queries - chạy CẢ 3):
+- `MiniMax-M2.7` (PRIMARY - MiniMax API)
+- `DeepSeek-V4-Pro` (Alibaba API)
+- `qwen3-next-80b-a3b-thinking` (Alibaba API)
+
+### Response Generation Models (sinh response - 2 models):
+- **local**: `Qwen/Qwen3-4B-Instruct-2507` (Colab GPU)
+- **high**: `gemini-3.1-flash-lite` (API call)
+
+**Dataset size:**
+- 330 queries × 3 query-models × 2 response-models × 2 languages = **3,960 responses**
+
+---
+
+## 2. Trạng thái hiện tại
+
+### ✅ Đã hoàn thành
+
+| Thành phần | Status | File/Ghi chú |
+|------------|--------|--------------|
+| Policy CSV parsing | ✅ Hoàn thành | `policy.csv` (12 policies) |
+| `.env` configuration | ✅ Hoàn thành | API keys đầy đủ |
+| Smoke test | ✅ Hoàn thành | `test_api.py` |
+| MiniMax API | ✅ Hoạt động | 1M tokens free |
+| Alibaba API | ✅ Hoạt động | Backup only |
+| Pipeline cleanup | ✅ Hoàn thành | Đã xóa template-based, giữ LLM-based |
+| Separate scripts | ✅ Hoàn thành | 6 scripts riêng biệt |
+
+### 🔴 Cần làm
+
+| # | Task | Priority | Ghi chú |
+|---|------|----------|---------|
+| 1 | Chạy query generation (3 models × 2 languages) | Cao | 1,980 queries output |
+| 2 | Chạy Qwen3-4B trên Colab (all 6 query files) | Cao | HF Transformers + GPU |
+| 3 | Chạy Gemini API (all 6 query files) | Cao | Gọi trực tiếp từ local |
+| 4 | LLM-as-Judge | Trung | ENG + VNI judges |
+| 5 | Merge + export golden dataset | Trung | 3,960 responses total |
+
+---
+
+## 3. Pipeline Flow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│           STEP 1: Query Generation (3 MODELS - SEPARATE RUNS)    │
+│  Script: scripts/generate_queries.py                             │
+│  Language: vi (Vietnamese) or eng (English)                      │
+│  Models (run SEPARATELY - each generates 330 queries):           │
+│      1. MiniMax-M2.7 (MiniMax API)                              │
+│      2. DeepSeek-V4-Pro (Alibaba API)                            │
+│      3. qwen3-next-80b-a3b-thinking (Alibaba API)                │
+│  Backup Models (if primary fails):                              │
+│      - qwen3.6-plus (Alibaba API)                                │
+│      - qwen3.7-max (Alibaba API)                                 │
+│  Output per model per language:                                  │
+│      - queries_minimax_vni.jsonl (330 queries)                   │
+│      - queries_deepseek_vni.jsonl (330 queries)                  │
+│      - queries_qwen_vni.jsonl (330 queries)                      │
+│      (same for eng)                                              │
+│  Total: 330 queries × 3 models × 2 languages = 1,980 queries   │
+└─────────────────────────────────────────────────────────────────┘
+                                ↓
+┌─────────────────────────────────────────────────────────────────┐
+│     STEP 2: Response Generation (Qwen3-4B - COLAB)               │
+│  Script: scripts/run_local_generation.py                         │
+│  Model: Qwen/Qwen3-4B-Instruct-2507                              │
+│  Input: ALL 6 query files (upload to Colab)                     │
+│  Output: queries_{model}_local_{lang}.jsonl                     │
+│      - queries_minimax_local_vni.jsonl                           │
+│      - queries_deepseek_local_vni.jsonl                         │
+│      - queries_qwen_local_vni.jsonl                             │
+│      (same pattern for eng)                                      │
+└─────────────────────────────────────────────────────────────────┘
+                                ↓
+┌─────────────────────────────────────────────────────────────────┐
+│         STEP 3: Response Generation (Gemini - API)               │
+│  Script: scripts/run_gemini_generation.py                         │
+│  Model: gemini-3.1-flash-lite (API)                              │
+│  Input: ALL 6 query files                                       │
+│  Output: queries_{model}_gemini_{lang}.jsonl                    │
+└─────────────────────────────────────────────────────────────────┘
+                                ↓
+┌─────────────────────────────────────────────────────────────────┐
+│                    STEP 4: LLM-as-Judge                          │
+│  Script: scripts/judge_responses.py                                │
+│  Judge ENG: DeepSeek-V4-Pro / qwq-max                            │
+│  Judge VNI: qwen3-235b / DeepSeek-V3.2                           │
+│  Output: judged_{lang}.jsonl                                     │
+└─────────────────────────────────────────────────────────────────┘
+                                ↓
+┌─────────────────────────────────────────────────────────────────┐
+│               STEP 5: Merge + Export                              │
+│  Script: scripts/merge_and_export.py                              │
+│  Commands: merge, export, split                                   │
+│  Final Output:                                                   │
+│      - golden_dataset_vni.jsonl                                   │
+│      - golden_dataset_eng.jsonl                                   │
+│  Total: 330 queries × 3 models × 2 response models × 2 languages  │
+│       = 3,960 responses                                          │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 4. Cấu trúc file
+
+```
+LLMRouter/
+├── policy.csv                        # Source policy (12 policies)
+├── policy_normalized.json           # Normalized policies
+├── test_api.py                      # Smoke test
+├── test_generated_queries.json      # 3 samples đã test
+│
+├── .env                             # ✅ API keys đã có
+│
+├── safety/
+│   └── dataset/
+│       └── pipeline.py              # SafetyGoldenDatasetBuilder
+│                                    # Chỉ giữ LLM-based methods
+│
+├── scripts/
+│   ├── generate_queries.py          # STEP 1: Generate queries (MiniMax)
+│   ├── run_local_generation.py       # STEP 2: Qwen3-4B on Colab
+│   ├── run_gemini_generation.py     # STEP 3: Gemini API
+│   ├── judge_responses.py            # STEP 4: LLM-as-Judge
+│   └── merge_and_export.py           # STEP 5: Merge + Export
+│
+└── artifacts/
+    └── safety_queries/
+        # STEP 1: Query generation (3 models × 2 languages = 6 files)
+        ├── queries_minimax_vni.jsonl     # 330 queries
+        ├── queries_minimax_eng.jsonl     # 330 queries
+        ├── queries_deepseek_vni.jsonl    # 330 queries
+        ├── queries_deepseek_eng.jsonl    # 330 queries
+        ├── queries_qwen_vni.jsonl        # 330 queries
+        ├── queries_qwen_eng.jsonl        # 330 queries
+        # STEP 2: Qwen3-4B responses (6 files)
+        ├── queries_minimax_local_vni.jsonl
+        ├── queries_minimax_local_eng.jsonl
+        ├── queries_deepseek_local_vni.jsonl
+        ├── queries_deepseek_local_eng.jsonl
+        ├── queries_qwen_local_vni.jsonl
+        ├── queries_qwen_local_eng.jsonl
+        # STEP 3: Gemini responses (6 files)
+        ├── queries_minimax_gemini_vni.jsonl
+        ├── queries_minimax_gemini_eng.jsonl
+        ├── queries_deepseek_gemini_vni.jsonl
+        ├── queries_deepseek_gemini_eng.jsonl
+        ├── queries_qwen_gemini_vni.jsonl
+        ├── queries_qwen_gemini_eng.jsonl
+        # STEP 4: After merge
+        ├── merged_vni.jsonl
+        ├── merged_eng.jsonl
+        # STEP 5: Final output
+        └── golden_dataset_*.jsonl
+```
+
+---
+
+## 5. API Configuration
+
+### Query Generation Models (sinh queries - chạy CẢ 3)
+
+| Model | ENV | Priority | Note |
+|-------|-----|----------|------|
+| MiniMax-M2.7 | `MINIMAX_*` | **1** | 1M tokens free, ưu tiên dùng |
+| DeepSeek-V4-Pro | `ALIBABA_QUERY_DEEPSEEK` | **2** | Alibaba API |
+| qwen3-next-80b-a3b-thinking | `ALIBABA_QUERY_QWEN` | **3** | Alibaba API |
+
+### Response Generation Models (sinh response - 2 models)
+
+| Tier | Model | ENV | Chạy trên |
+|------|-------|-----|-----------|
+| **local** | Qwen/Qwen3-4B-Instruct-2507 | `LOCAL_GENERATION_MODEL` | **Colab GPU** |
+| **high** | gemini-3.1-flash-lite | `GEMINI_GENERATION_NAME` | **Local API** |
+
+### Judge Models (đánh giá responses)
+
+| Ngôn ngữ | Primary | Backup |
+|----------|---------|--------|
+| ENG | DeepSeek-V4-Pro | qwq-max |
+| VNI | qwen3-235b | DeepSeek-V3.2 |
+| SUB | glm-5.1 | qwen3.7-plus |
+
+---
+
+## 6. Scripts
+
+### 6.1 generate_queries.py
+
+Sinh queries bằng LLM (3 models - chạy riêng từng model).
+
+```bash
+# Vietnamese - MiniMax
+python scripts/generate_queries.py \
+    --language vi --model minimax \
+    --output artifacts/safety_queries/queries_minimax_vni.jsonl
+
+# Vietnamese - DeepSeek
+python scripts/generate_queries.py \
+    --language vi --model deepseek \
+    --output artifacts/safety_queries/queries_deepseek_vni.jsonl
+
+# Vietnamese - Qwen
+python scripts/generate_queries.py \
+    --language vi --model qwen \
+    --output artifacts/safety_queries/queries_qwen_vni.jsonl
+
+# English - same pattern with --language eng
+
+# Options
+--language vi|eng           # Language (REQUIRED)
+--model minimax|deepseek|qwen # Model to use (REQUIRED)
+--output <path>              # Output file (REQUIRED)
+--single-per-policy 5        # Samples per policy per complexity
+--multi-groups 15            # Number of multi-policy groups
+--multi-per-group 3          # Samples per multi-policy group
+--no-policy-per-complexity 20 # No-policy samples per complexity
+```
+
+### 6.2 run_local_generation.py
+
+Chạy Qwen3-4B trên Colab (GPU).
+
+```bash
+# Colab setup
+!git clone https://github.com/your-repo/LLMRouter.git
+%cd LLMRouter
+!pip install transformers torch accelerate
+
+# Run generation
+!python scripts/run_local_generation.py \
+    --input artifacts/safety_queries/queries_vni.jsonl \
+    --output artifacts/safety_queries/queries_local_vni.jsonl \
+    --model-name "Qwen/Qwen3-4B-Instruct-2507" \
+    --batch-size 8
+
+# Download output
+# from google.colab import files
+# files.download("artifacts/safety_queries/queries_local_vni.jsonl")
+```
+
+### 6.3 run_gemini_generation.py
+
+Gọi Gemini API.
+
+```bash
+python scripts/run_gemini_generation.py \
+    --input artifacts/safety_queries/queries_vni.jsonl \
+    --output artifacts/safety_queries/queries_gemini_vni.jsonl
+
+# Options
+--model-name "gemini-3.1-flash-lite"
+--delay 1.0  # Delay between calls
+```
+
+### 6.4 judge_responses.py
+
+LLM-as-Judge đánh giá responses.
+
+```bash
+python scripts/judge_responses.py \
+    --input artifacts/safety_queries/merged_vni.jsonl \
+    --output artifacts/safety_queries/judged_vni.jsonl \
+    --language vi
+
+# Options
+--delay 1.0  # Delay between calls
+```
+
+### 6.5 merge_and_export.py
+
+Merge responses và export golden dataset.
+
+```bash
+# Merge local + gemini
+python scripts/merge_and_export.py merge \
+    --local artifacts/safety_queries/queries_local_vni.jsonl \
+    --gemini artifacts/safety_queries/queries_gemini_vni.jsonl \
+    --output artifacts/safety_queries/merged_vni.jsonl
+
+# Export golden dataset
+python scripts/merge_and_export.py export \
+    --input artifacts/safety_queries/merged_vni.jsonl \
+    --output artifacts/safety_queries/golden_dataset_vni.jsonl
+
+# Split train/dev/test
+python scripts/merge_and_export.py split \
+    --input artifacts/safety_queries/golden_dataset_vni.jsonl \
+    --output-dir artifacts/safety_queries/splits_vni \
+    --train-ratio 0.7 \
+    --dev-ratio 0.15 \
+    --test-ratio 0.15
+```
+
+---
+
+## 7. Usage
+
+### Complete workflow
+
+```bash
+# STEP 1: Generate queries (3 models × 2 languages = 6 files)
+# Vietnamese queries
+python scripts/generate_queries.py --language vi --model minimax --output artifacts/safety_queries/queries_minimax_vni.jsonl
+python scripts/generate_queries.py --language vi --model deepseek --output artifacts/safety_queries/queries_deepseek_vni.jsonl
+python scripts/generate_queries.py --language vi --model qwen --output artifacts/safety_queries/queries_qwen_vni.jsonl
+
+# English queries
+python scripts/generate_queries.py --language eng --model minimax --output artifacts/safety_queries/queries_minimax_eng.jsonl
+python scripts/generate_queries.py --language eng --model deepseek --output artifacts/safety_queries/queries_deepseek_eng.jsonl
+python scripts/generate_queries.py --language eng --model qwen --output artifacts/safety_queries/queries_qwen_eng.jsonl
+
+# Push to repo
+git add artifacts/safety_queries/queries_*.jsonl
+git commit -m "Generated queries"
+git push
+
+# STEP 2: Run on Colab (Qwen3-4B) for all 6 query files
+# - Clone repo on Colab
+# - Upload all 6 queries_*.jsonl files
+# - Run for each: python scripts/run_local_generation.py --input ... --output ...
+# - Download queries_*_local_*.jsonl files
+
+# STEP 3: Run Gemini (local) for all 6 query files
+for lang in vni eng; do
+  for model in minimax deepseek qwen; do
+    python scripts/run_gemini_generation.py \
+      --input artifacts/safety_queries/queries_${model}_${lang}.jsonl \
+      --output artifacts/safety_queries/queries_${model}_gemini_${lang}.jsonl
+  done
+done
+
+# STEP 4: Merge + Judge
+python scripts/merge_and_export.py merge \
+  --inputs artifacts/safety_queries/queries_minimax_local_vni.jsonl \
+          artifacts/safety_queries/queries_deepseek_local_vni.jsonl \
+          artifacts/safety_queries/queries_qwen_local_vni.jsonl \
+          artifacts/safety_queries/queries_minimax_gemini_vni.jsonl \
+          artifacts/safety_queries/queries_deepseek_gemini_vni.jsonl \
+          artifacts/safety_queries/queries_qwen_gemini_vni.jsonl \
+  --output artifacts/safety_queries/merged_vni.jsonl
+
+python scripts/judge_responses.py --input merged_vni.jsonl --output judged_vni.jsonl --language vi
+
+# STEP 5: Export
+python scripts/merge_and_export.py export --input judged_vni.jsonl --output golden_dataset_vni.jsonl
+python scripts/merge_and_export.py split --input golden_dataset_vni.jsonl --output-dir splits_vni
+```
+
+---
+
+## 8. Ghi chú quan trọng
+
+1. **3 Query Generation Models** - chạy CẢ 3 (MiniMax, DeepSeek-V4-Pro, qwen3-next-80b)
+2. **MiniMax ưu tiên** - 1M tokens free, dùng trước
+3. **2 Response Generation Models** - Qwen3-4B (Colab) + Gemini (API)
+4. **Colab cho Qwen3-4B** - local machine không chạy nổi 4B model
+5. **Không lưu keys trong code** - dùng `.env`
+
+---
+
+## 9. Files
+
+| File | Mô tả |
+|------|-------|
+| `safety/dataset/pipeline.py` | SafetyGoldenDatasetBuilder (LLM-based only) |
+| `scripts/generate_queries.py` | Generate queries using LLM (3 models) |
+| `scripts/run_local_generation.py` | Qwen3-4B on Colab |
+| `scripts/run_gemini_generation.py` | Gemini API calls |
+| `scripts/judge_responses.py` | LLM-as-Judge |
+| `scripts/merge_and_export.py` | Merge + Export |
+
+## 10. Model Configuration (.env)
+
+```
+# Query Generation (3 models - ALL RUN)
+MINIMAX_QUERY_NAME=MiniMax-M2.7
+ALIBABA_QUERY_DEEPSEEK=DeepSeek-V4-Pro
+ALIBABA_QUERY_QWEN=qwen3-next-80b-a3b-thinking
+ALIBABA_QUERY_SUB1=qwen3.6-plus (backup)
+ALIBABA_QUERY_SUB2=qwen3.7-max (backup)
+
+# Response Generation (2 models)
+LOCAL_GENERATION_MODEL=Qwen/Qwen3-4B-Instruct-2507
+GEMINI_GENERATION_NAME=gemini-3.1-flash-lite
+```

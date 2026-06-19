@@ -1,0 +1,13 @@
+{
+  "router_config_path": "/home/thinh/projects/VSF/LLMRouter/configs/safety/router.yaml",
+  "policy_path": "/home/thinh/projects/VSF/LLMRouter/policy.csv",
+  "seed": 42,
+  "output_dir": "/home/thinh/projects/VSF/LLMRouter/artifacts/safety_queries",
+  "counts": {
+    "single_per_policy": 15,
+    "multi_groups": 15,
+    "multi_per_group": 6,
+    "no_policy_per_complexity": 20,
+    "total": 330
+  }
+}

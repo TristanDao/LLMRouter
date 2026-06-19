@@ -1,0 +1,27 @@
+Tên Project *,Sản phẩm bàn giao *,Tiêu chí hoàn thành,Công việc 1,Công việc 2,Công việc 3,Công việc 4,Công việc 5,Công việc 6
+"Difficulty and Uncertainty Estimation in
+Guardrails Systems","1. Báo cáo chi tiết về các phương pháp/model hiện đại và các benchmarks phổ biến cho bài toán
+2. Báo cáo chi tiết về cách xây dựng các tập dữ liệu. Tập dữ liệu tương ứng ở dạng file json.
+3. Code huấn luyện, code inference, models weight (ở định dạng có thể load được bằng thư viện transformers của huggingface).
+4. Báo cáo về kết quả của các thí nghiệm đã thực hiện.","1. Hoàn thành survey các phương pháp/model và benchmark liên quan đến guardrails, uncertainty estimation, difficulty estimation.
+2. Xây dựng đầy đủ tập train/dev/test cho tiếng Anh và tiếng Việt, có guideline và thống kê dữ liệu.
+3. Huấn luyện được baseline model và ít nhất một hướng cải tiến, có báo cáo kết quả thực nghiệm.
+4. Bàn giao đầy đủ code, weights, tài liệu hướng dẫn inference/train và báo cáo tổng kết.","Tìm hiểu bài toán guardrails classification và uncertainty estimation.
+Đọc các paper/pipeline liên quan đến moderation, safety classification, selective prediction.
+Khảo sát benchmark/dataset phổ biến cho policy violation detection.
+Đề xuất hướng tiếp cận ban đầu và tiêu chí đánh giá.","Tổng hợp và phân loại các phương pháp/model phù hợp cho bài toán.
+Phân tích các hướng uncertainty estimation: confidence score, entropy, ensemble, calibration.
+Thiết kế schema dữ liệu và format annotation cho dataset.
+Xác định metric đánh giá cho violation prediction và difficulty estimation.","Thu thập và xây dựng dữ liệu tiếng Anh theo policy của khách hàng.
+Thiết kế guideline gán nhãn violation và difficulty level.
+Xây dựng pipeline preprocessing và validate dữ liệu.
+Chia tập train/dev/test và thống kê dữ liệu.","Xây dựng dữ liệu tiếng Việt và dữ liệu multi-turn dialogue.
+Kiểm tra chất lượng annotation và consistency giữa các nhãn.
+Bổ sung hard cases, ambiguous samples và adversarial samples.
+Hoàn thiện bộ dataset ở dạng json chuẩn hóa.","Xây dựng baseline training/inference pipeline bằng transformers.
+Huấn luyện các model phân loại violation và difficulty estimation.
+Thử nghiệm các kỹ thuật uncertainty estimation và calibration.
+Đánh giá kết quả trên tập dev/test và phân tích lỗi.","Tinh chỉnh mô hình và tối ưu hiệu năng inference.
+Thực hiện benchmark giữa các hướng tiếp cận khác nhau.
+Hoàn thiện báo cáo thực nghiệm, phân tích ưu/nhược điểm mô hình.
+Chuẩn bị sản phẩm bàn giao: code, weights, dataset, tài liệu hướng dẫn."

@@ -1,0 +1,9 @@
+router_config_path: configs/safety/router.yaml
+policy_path: policy.csv
+output_dir: artifacts/safety_queries
+seed: 42
+single_per_policy: 15
+multi_groups: 15
+multi_per_group: 6
+no_policy_per_complexity: 20
+write_manifest: true
