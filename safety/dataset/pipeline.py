@@ -954,7 +954,7 @@ class SafetyGoldenDatasetBuilder:
             print(f"[DEBUG] Trying model: {model_key} ({model_config['name']})")
 
             try:
-                prompt_template = load_prompt_template("task_safety_query_generation")
+                prompt_template = load_prompt_template("query_generation")
             except FileNotFoundError:
                 print(f"[DEBUG] Prompt template not found, skipping")
                 continue
@@ -1045,7 +1045,7 @@ class SafetyGoldenDatasetBuilder:
             print(f"[DEBUG] Trying BACKUP model: {model_key} ({model_config['name']})")
 
             try:
-                prompt_template = load_prompt_template("task_safety_query_generation")
+                prompt_template = load_prompt_template("query_generation")
             except FileNotFoundError:
                 continue
 

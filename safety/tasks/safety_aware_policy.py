@@ -27,7 +27,7 @@ def format_safety_aware_policy_prompt(sample_data):
     Returns:
         dict: {"system": str, "user": str} system and user prompts
     """
-    system_prompt = load_prompt_template("task_safety_aware_policy")
+    system_prompt = load_prompt_template("safety_evaluation")
 
     policies = sample_data.get("policies", "")
     if isinstance(policies, list):

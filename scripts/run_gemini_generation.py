@@ -34,11 +34,47 @@ if str(PROJECT_ROOT) not in sys.path:
 from safety.common.env import load_dotenv_file
 load_dotenv_file(PROJECT_ROOT / ".env")
 
+from llmrouter.prompts import load_prompt_template
+
+POLICY_NORMALIZED_PATH = PROJECT_ROOT / "policy_normalized.json"
+_POLICIES_CACHE = None
+
+
+def load_policies():
+    """Load policies from policy_normalized.json."""
+    global _POLICIES_CACHE
+    if _POLICIES_CACHE is None:
+        with open(POLICY_NORMALIZED_PATH, "r", encoding="utf-8") as f:
+            _POLICIES_CACHE = json.load(f)
+    return _POLICIES_CACHE
+
+
+def build_all_policies_text(policies):
+    """Build all policies text for answer prompt."""
+    policy_parts = []
+    for p in policies:
+        policy_parts.append(f"- [{p['policy_id']}] {p['policy_name']}: {p['definition']}")
+    return "\n".join(policy_parts)
+
+
+def build_answer_prompt(query: str, policies, language: str = "vi") -> str:
+    """Build system prompt using answer.yaml template."""
+    answer_template = load_prompt_template("answer")
+    all_policies = build_all_policies_text(policies)
+    lang_display = "Vietnamese" if language == "vi" else "English"
+
+    system_prompt = answer_template.format(
+        language=lang_display,
+        all_policies=all_policies,
+        query=query,
+    )
+    return system_prompt
+
 
 def call_gemini(
     query: str,
     model_name: str = "gemini-3.1-flash-lite",
-    system_prompt: str = "Bạn là trợ lý AI an toàn. Hãy từ chối các yêu cầu vi phạm policy.",
+    system_prompt: Optional[str] = None,
     max_tokens: int = 1024,
     temperature: float = 0.01,
     timeout: int = 60,
@@ -51,6 +87,10 @@ def call_gemini(
         return {"error": "GEMINI_API_KEY not set", "response": ""}
 
     genai.configure(api_key=api_key)
+
+    if system_prompt is None:
+        policies = load_policies()
+        system_prompt = build_answer_prompt(query, policies, "vi")
 
     model = genai.GenerativeModel(
         model_name=model_name,
@@ -85,11 +125,13 @@ def process_queries(
     input_path: str,
     output_path: str,
     model_name: str = "gemini-3.1-flash-lite",
-    system_prompt: str = "Bạn là trợ lý AI an toàn. Hãy từ chối các yêu cầu vi phạm policy.",
+    system_prompt: Optional[str] = None,
     delay_between_calls: float = 1.0,
 ) -> int:
     """Process queries and generate responses via Gemini API."""
     from tqdm import tqdm
+
+    policies = load_policies()
 
     with open(input_path, "r", encoding="utf-8") as f:
         queries = [json.loads(line) for line in f]
@@ -101,11 +143,17 @@ def process_queries(
     results = []
     for i, query_obj in enumerate(tqdm(queries, desc="Generating")):
         query_text = query_obj.get("query", "")
+        language = query_obj.get("language", "vi")
+
+        if system_prompt is None:
+            sys_prompt = build_answer_prompt(query_text, policies, language)
+        else:
+            sys_prompt = system_prompt
 
         result = call_gemini(
             query=query_text,
             model_name=model_name,
-            system_prompt=system_prompt,
+            system_prompt=sys_prompt,
         )
 
         record = {

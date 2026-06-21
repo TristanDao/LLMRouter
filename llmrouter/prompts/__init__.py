@@ -1,170 +1,74 @@
 """
-Prompt template loader utility.
+Prompt template loader for LLMRouter.
 
-This module provides functions to load prompt templates from YAML files.
-Templates are organized in subfolders:
-- task_prompts/ - Task-specific prompts for evaluation benchmarks
-- agentic_role/ - Agent and multi-agent reasoning prompts
-- router_prompts/ - Router-specific prompt templates
-- data_prompts/ - Data conversion and processing prompts
-
-Also searches safety/tasks/ directory for user-defined templates.
-Custom templates take precedence over built-in templates with the same name.
+Provides a centralized way to load YAML prompt templates from subdirectories.
+Templates are cached in memory after first load.
 """
 
 import os
-import yaml
+import re
 from pathlib import Path
+from typing import Optional, Dict
+import yaml
 
-# Get the directory where this file is located
-_PROMPTS_DIR = Path(__file__).parent
 
-# Get safety tasks directory (safety/tasks relative to project root)
-# Project root is assumed to be 2 levels up from llmrouter/prompts/__init__.py
-_PROJECT_ROOT = _PROMPTS_DIR.parent.parent
-_SAFETY_TASKS_DIR = _PROJECT_ROOT / "safety" / "tasks"
+# Cache for loaded templates
+_TEMPLATE_CACHE: Dict[str, str] = {}
+
+# Base directories for prompts (searched in order)
+_PROMPTS_DIRS = [
+    Path(__file__).parent.resolve(),
+    Path(__file__).parent.parent.parent / "safety" / "prompts" / "templates",
+]
+
 
 def load_prompt_template(template_name: str) -> str:
     """
-    Load a prompt template from a YAML file.
-    
-    Searches in both safety/tasks/ and llmrouter/prompts/ directories.
-    Custom templates take precedence over built-in templates with the same name.
-    
-    Search order:
-    1. safety/tasks/task_prompts/ (custom templates - highest priority)
-    2. llmrouter/prompts/ (built-in templates - fallback)
-    
-    You can specify either:
-    - Just the filename: "task_mc" (searches all subfolders)
-    - With subfolder path: "task_prompts/task_mc" (searches specific subfolder)
-    
+    Load a prompt template by name from the prompts directories.
+
+    Searches recursively through subdirectories for YAML files matching
+    the template name (without .yaml extension).
+
     Args:
-        template_name: Name of the template file (without .yaml extension)
-                      Can include subfolder path like "task_prompts/task_mc"
-    
+        template_name: Name of the template to load (e.g., 'task_mc',
+                      'safety_evaluation', 'agent_prompt')
+
     Returns:
-        The prompt template string
-    
+        The raw template string from the YAML file
+
     Raises:
-        FileNotFoundError: If the template file doesn't exist in either location
+        FileNotFoundError: If no matching template is found
     """
-    searched_locations = []
-    
-    # Helper function to load and validate template
-    def _load_template_file(template_path: Path) -> str:
-        """Load and validate a template file"""
-        with open(template_path, 'r', encoding='utf-8') as f:
-            data = yaml.safe_load(f)
-        if 'template' not in data:
-            raise ValueError(f"YAML file {template_path} must contain a 'template' key")
-        return data['template']
-    
-    # Step 1: Search in safety tasks directory first (highest priority)
-    if _SAFETY_TASKS_DIR.exists():
-        if "/" in template_name or "\\" in template_name:
-            safety_path = _SAFETY_TASKS_DIR / f"{template_name}.yaml"
-            if safety_path.exists():
-                return _load_template_file(safety_path)
+    if template_name in _TEMPLATE_CACHE:
+        return _TEMPLATE_CACHE[template_name]
 
-        for root, dirs, files in os.walk(_SAFETY_TASKS_DIR):
-            root_path = Path(root)
-            dirs[:] = [d for d in dirs if not d.startswith('.') and d != '__pycache__']
+    # Normalize template name
+    search_name = template_name
+    if search_name.endswith(".yaml"):
+        search_name = search_name[:-5]
 
-            for file in files:
-                if file == f"{template_name}.yaml":
-                    safety_path = root_path / file
-                    return _load_template_file(safety_path)
-    
-    # Step 2: Search in built-in prompts directory (fallback)
-    # Try direct path first (if subfolder is specified)
-    if "/" in template_name or "\\" in template_name:
-        builtin_path = _PROMPTS_DIR / f"{template_name}.yaml"
-        if builtin_path.exists():
-            return _load_template_file(builtin_path)
-    
-    # Search recursively in built-in prompts subfolders
-    for root, dirs, files in os.walk(_PROMPTS_DIR):
-        root_path = Path(root)
-        # Skip __pycache__ and other hidden directories
-        dirs[:] = [d for d in dirs if not d.startswith('.') and d != '__pycache__']
-        
-        for file in files:
-            if file == f"{template_name}.yaml":
-                builtin_path = root_path / file
-                return _load_template_file(builtin_path)
-    
-    # If not found in either location, raise error
-    if _SAFETY_TASKS_DIR.exists():
-        searched_locations.append(str(_SAFETY_TASKS_DIR))
-    searched_locations.append(str(_PROMPTS_DIR))
-    
-    raise FileNotFoundError(
-        f"Prompt template not found: {template_name}.yaml\n"
-        f"Searched in: {[loc for loc in searched_locations if loc]}"
-    )
+    # Search for YAML file in all prompts directories
+    for prompts_dir in _PROMPTS_DIRS:
+        if not prompts_dir.exists():
+            continue
+        for yaml_file in prompts_dir.rglob("*.yaml"):
+            if yaml_file.stem == search_name:
+                with open(yaml_file, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f)
+
+                if isinstance(data, dict) and "template" in data:
+                    template_str = data["template"]
+                elif isinstance(data, str):
+                    template_str = data
+                else:
+                    template_str = str(data)
+
+                _TEMPLATE_CACHE[template_name] = template_str
+                return template_str
+
+    raise FileNotFoundError(f"Prompt template '{template_name}' not found in {_PROMPTS_DIRS}")
 
 
-def load_prompt_template_with_metadata(template_name: str) -> dict:
-    """
-    Load a prompt template with its metadata from a YAML file.
-    
-    Searches in both safety/tasks/ and llmrouter/prompts/ directories.
-    Custom templates take precedence over built-in templates with the same name.
-    
-    Args:
-        template_name: Name of the template file (without .yaml extension)
-                      Can include subfolder path like "task_prompts/task_mc"
-    
-    Returns:
-        Dictionary with 'template' and any other metadata keys
-    """
-    searched_locations = []
-    
-    # Step 1: Search in safety tasks directory first (highest priority)
-    if _SAFETY_TASKS_DIR.exists():
-        if "/" in template_name or "\\" in template_name:
-            safety_path = _SAFETY_TASKS_DIR / f"{template_name}.yaml"
-            if safety_path.exists():
-                with open(safety_path, 'r', encoding='utf-8') as f:
-                    return yaml.safe_load(f)
-
-        for root, dirs, files in os.walk(_SAFETY_TASKS_DIR):
-            root_path = Path(root)
-            dirs[:] = [d for d in dirs if not d.startswith('.') and d != '__pycache__']
-
-            for file in files:
-                if file == f"{template_name}.yaml":
-                    safety_path = root_path / file
-                    with open(safety_path, 'r', encoding='utf-8') as f:
-                        return yaml.safe_load(f)
-    
-    # Step 2: Search in built-in prompts directory (fallback)
-    # Try direct path first (if subfolder is specified)
-    if "/" in template_name or "\\" in template_name:
-        builtin_path = _PROMPTS_DIR / f"{template_name}.yaml"
-        if builtin_path.exists():
-            with open(builtin_path, 'r', encoding='utf-8') as f:
-                return yaml.safe_load(f)
-    
-    # Search recursively in built-in prompts subfolders
-    for root, dirs, files in os.walk(_PROMPTS_DIR):
-        root_path = Path(root)
-        # Skip __pycache__ and other hidden directories
-        dirs[:] = [d for d in dirs if not d.startswith('.') and d != '__pycache__']
-        
-        for file in files:
-            if file == f"{template_name}.yaml":
-                builtin_path = root_path / file
-                with open(builtin_path, 'r', encoding='utf-8') as f:
-                    return yaml.safe_load(f)
-    
-    # If not found in either location, raise error
-    if _SAFETY_TASKS_DIR.exists():
-        searched_locations.append(str(_SAFETY_TASKS_DIR))
-    searched_locations.append(str(_PROMPTS_DIR))
-    
-    raise FileNotFoundError(
-        f"Prompt template not found: {template_name}.yaml\n"
-        f"Searched in: {[loc for loc in searched_locations if loc]}"
-    )
+def clear_cache():
+    """Clear the template cache. Useful for testing."""
+    _TEMPLATE_CACHE.clear()

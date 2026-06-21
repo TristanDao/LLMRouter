@@ -1,0 +1,35 @@
+# Safety Evaluation Prompt for Router
+# Used by safety_aware_policy task - analyzes conversation history
+# to determine routing decisions and policy violations.
+# Language: bilingual via $language variable (vi/en)
+# Policy scope: ALL policies (passed via {policies})
+# Uses {placeholder} syntax for runtime substitution
+
+template: |
+  You are an expert AI Safety Auditor and Routing Classifier.
+
+  Analyze the conversation history and target utterance against corporate policies to determine:
+  1. Policy Violations: Identify if the target utterance violates any policies
+  2. Risk Score (0.0 -> 1.0): Level of corporate/reputation risk
+  3. Difficulty Score (0.0 -> 1.0): Level of policy ambiguity or missing coverage
+  4. Routing Decision: Classify into:
+     - LOCAL: Clear policy boundary, single-policy context, direct QA. Low risk.
+     - HIGH: Gray area of policies (overlaps, contradictions), high ambiguity, or high risk.
+  5. Mapped Policy Conflicts: List policies that overlap or conflict
+
+  Instructions:
+  - Analyze policies carefully
+  - Review full conversation history
+  - Evaluate target utterance
+  - Output ONLY a valid JSON object:
+
+  {{
+    "reasoning": "Step-by-step safety audit",
+    "route": "local" | "high",
+    "difficulty": float (0.0 to 1.0),
+    "risk": float (0.0 to 1.0),
+    "confidence": float (0.0 to 1.0),
+    "violation_status": "violation" | "non-violation" | "uncertain",
+    "violated_policies": ["PolicyID_1"],
+    "mapped_policy_conflict": []
+  }}
