@@ -9,7 +9,6 @@ safety/prompts/templates/
 ├── query_generation.yaml    # Step 1: Generate safety test queries
 ├── answer.yaml              # Steps 2-3: Generate responses (Qwen/Gemini)
 ├── judge.yaml               # Step 4: LLM-as-Judge evaluation
-├── safety_evaluation.yaml   # Router: Analyze conversation for routing decisions
 └── README.md                # This file
 ```
 
@@ -20,7 +19,6 @@ safety/prompts/templates/
 | Step 1 | `query_generation` | Generate test queries | **Target only** |
 | Steps 2-3 | `answer` | Generate responses | **ALL 12 policies** |
 | Step 4 | `judge` | Evaluate responses | **Target only** |
-| Router | `safety_evaluation` | Analyze conversation → route decision | **All policies** |
 
 ## Usage
 
@@ -54,12 +52,6 @@ prompt = template.format(
     response="Model response to evaluate",
     target_policies="[Relevant policy definitions here]"
 )
-
-# Safety Evaluation (Router) - all policies
-template = load_prompt_template("safety_evaluation")
-prompt = template.format(
-    policies="[All policy definitions here]"
-)
 ```
 
 ## Policy Scope Rules
@@ -67,7 +59,6 @@ prompt = template.format(
 1. **Query Generation**: Only read target policy(ies) being tested
 2. **Answer Generation**: Read ALL 12 policies to prevent violations
 3. **Judge Evaluation**: Only read target policy(ies) relevant to the query
-4. **Safety Evaluation (Router)**: Read ALL policies for routing decisions
 
 ## YAML Format
 
