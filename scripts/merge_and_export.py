@@ -27,63 +27,61 @@ if str(PROJECT_ROOT) not in sys.path:
 
 
 def merge_responses(
-    local_path: str,
-    gemini_path: str,
+    input_paths: List[str],
     output_path: str,
 ) -> int:
-    """Merge local and gemini responses into a single file."""
-    local_records = {}
-    with open(local_path, "r", encoding="utf-8") as f:
-        for line in f:
-            record = json.loads(line)
-            query_id = record.get("query_id")
-            if query_id:
-                local_records[query_id] = record
+    """Merge multiple response files into a single file by query_id."""
+    all_records = {}
+    source_models = set()
 
-    gemini_records = {}
-    with open(gemini_path, "r", encoding="utf-8") as f:
-        for line in f:
-            record = json.loads(line)
-            query_id = record.get("query_id")
-            if query_id:
-                gemini_records[query_id] = record
+    for input_path in input_paths:
+        if not os.path.exists(input_path):
+            print(f"Warning: {input_path} not found, skipping")
+            continue
 
-    print(f"Loaded {len(local_records)} local records")
-    print(f"Loaded {len(gemini_records)} gemini records")
+        with open(input_path, "r", encoding="utf-8") as f:
+            for line in f:
+                record = json.loads(line)
+                query_id = record.get("query_id")
+                if query_id:
+                    if query_id not in all_records:
+                        all_records[query_id] = {}
+                    model_name = record.get("model_name", "unknown")
+                    source_models.add(model_name)
+                    all_records[query_id][model_name] = record
+
+    print(f"Loaded {len(all_records)} query_ids from {len(input_paths)} files")
+    print(f"Models found: {source_models}")
 
     merged = []
-    all_query_ids = set(local_records.keys()) | set(gemini_records.keys())
+    for query_id in sorted(all_records.keys()):
+        records_by_model = all_records[query_id]
 
-    for query_id in sorted(all_query_ids):
-        local = local_records.get(query_id, {})
-        gemini = gemini_records.get(query_id, {})
+        first_record = next(iter(records_by_model.values()))
 
-        record = {
+        merged_record = {
             "query_id": query_id,
-            "query": local.get("query") or gemini.get("query", ""),
-            "policy_ids": local.get("policy_ids") or gemini.get("policy_ids", []),
-            "policy_names": local.get("policy_names") or gemini.get("policy_names", []),
-            "designed_complexity": local.get("designed_complexity") or gemini.get("designed_complexity", ""),
-            "policy_match_type": local.get("policy_match_type") or gemini.get("policy_match_type", ""),
-            "group_type": local.get("group_type") or gemini.get("group_type", ""),
-            "language": local.get("language") or gemini.get("language", "vi"),
-            "local_model": local.get("model_name", ""),
-            "local_response": local.get("model_response", ""),
-            "gemini_model": gemini.get("model_name", ""),
-            "gemini_response": gemini.get("model_response", ""),
+            "query": first_record.get("query", ""),
+            "policy_ids": first_record.get("policy_ids", []),
+            "policy_names": first_record.get("policy_names", []),
+            "designed_complexity": first_record.get("designed_complexity", ""),
+            "policy_match_type": first_record.get("policy_match_type", ""),
+            "group_type": first_record.get("group_type", ""),
+            "language": first_record.get("language", "vi"),
+            "responses": {},
         }
 
-        if local.get("response_time"):
-            record["local_response_time"] = local.get("response_time", 0)
-        if gemini.get("response_time"):
-            record["gemini_response_time"] = gemini.get("response_time", 0)
+        for model_name, record in records_by_model.items():
+            merged_record["responses"][model_name] = {
+                "response": record.get("model_response", ""),
+                "response_time": record.get("response_time", 0),
+                "error": record.get("error"),
+            }
 
-        if local.get("judge_result"):
-            record["judge_result"] = local.get("judge_result")
-        elif gemini.get("judge_result"):
-            record["judge_result"] = gemini.get("judge_result")
+            if record.get("judge_result"):
+                merged_record["judge_result"] = record.get("judge_result")
 
-        merged.append(record)
+        merged.append(merged_record)
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
@@ -107,8 +105,9 @@ def export_golden_dataset(
 
     golden_records = []
     for record in records:
-        local_response = record.get("local_response", "")
-        gemini_response = record.get("gemini_response", "")
+        responses = record.get("responses", {})
+        local_response = responses.get("Qwen/Qwen3-4B-Instruct-2507", {}).get("response", "") if responses else ""
+        gemini_response = responses.get("gemini-3.1-flash-lite", {}).get("response", "") if responses else ""
         judge_result = record.get("judge_result", {})
 
         consensus = judge_result.get("consensus") if judge_result else None
@@ -208,9 +207,9 @@ def main() -> int:
     )
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
-    merge_parser = subparsers.add_parser("merge", help="Merge local and gemini responses")
-    merge_parser.add_argument("--local", "-l", required=True, help="Local model responses JSONL")
-    merge_parser.add_argument("--gemini", "-g", required=True, help="Gemini model responses JSONL")
+    merge_parser = subparsers.add_parser("merge", help="Merge multiple response files")
+    merge_parser.add_argument("--inputs", "-i", nargs="+", required=True,
+                              help="Input JSONL files (can specify multiple)")
     merge_parser.add_argument("--output", "-o", required=True, help="Output merged JSONL")
 
     export_parser = subparsers.add_parser("export", help="Export golden dataset with labels")
@@ -227,7 +226,7 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.command == "merge":
-        count = merge_responses(args.local, args.gemini, args.output)
+        count = merge_responses(args.inputs, args.output)
         print(f"Done. Merged {count} records.")
         return 0
     elif args.command == "export":

@@ -1,0 +1,23 @@
+# Safety Pipeline Dependencies
+
+# Core
+tqdm
+pyyaml
+
+# Data processing
+pandas
+numpy
+
+# ML/AI
+torch
+transformers
+accelerate
+datasets
+Pillow
+
+# API clients
+google-generativeai
+litellm
+
+# Validation
+pydantic

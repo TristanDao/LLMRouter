@@ -954,12 +954,14 @@ class SafetyGoldenDatasetBuilder:
             print(f"[DEBUG] Trying model: {model_key} ({model_config['name']})")
 
             try:
-                prompt_template = load_prompt_template("query_generation")
+                lang_suffix = "_en" if language == "eng" else "_vi"
+                prompt_template = load_prompt_template("query_generation" + lang_suffix)
             except FileNotFoundError:
                 print(f"[DEBUG] Prompt template not found, skipping")
                 continue
 
             target_policies_str = json.dumps(target_policies) if target_policies else "[]"
+            system_prompt = "You are an expert at creating test cases for Safety Router. Only return a valid JSON Array, no additional text."
             user_content = prompt_template.format(
                 generation_mode=generation_mode,
                 target_policies=target_policies_str,
@@ -967,9 +969,8 @@ class SafetyGoldenDatasetBuilder:
                 num_samples=num_samples,
                 policy_context=policy_context or "No additional policy context.",
                 language=language,
+                system_instruction=system_prompt,
             )
-
-            system_prompt = "You are an expert at creating test cases for Safety Router. Only return a valid JSON Array, no additional text."
 
             max_retries = 3
             retry_count = 0
@@ -1045,11 +1046,13 @@ class SafetyGoldenDatasetBuilder:
             print(f"[DEBUG] Trying BACKUP model: {model_key} ({model_config['name']})")
 
             try:
-                prompt_template = load_prompt_template("query_generation")
+                lang_suffix = "_en" if language == "eng" else "_vi"
+                prompt_template = load_prompt_template("query_generation" + lang_suffix)
             except FileNotFoundError:
                 continue
 
             target_policies_str = json.dumps(target_policies) if target_policies else "[]"
+            system_prompt = "You are an expert at creating test cases for Safety Router. Only return a valid JSON Array, no additional text."
             user_content = prompt_template.format(
                 generation_mode=generation_mode,
                 target_policies=target_policies_str,
@@ -1057,9 +1060,8 @@ class SafetyGoldenDatasetBuilder:
                 num_samples=num_samples,
                 policy_context=policy_context or "No additional policy context.",
                 language=language,
+                system_instruction=system_prompt,
             )
-
-            system_prompt = "You are an expert at creating test cases for Safety Router. Only return a valid JSON Array, no additional text."
 
             try:
                 from llmrouter.utils.api_calling import call_api

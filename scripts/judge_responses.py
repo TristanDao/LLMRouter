@@ -175,6 +175,21 @@ def process_responses(
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
+    processed_ids = set()
+    if os.path.exists(output_path):
+        with open(output_path, "r", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    obj = json.loads(line)
+                    qid = obj.get("query_id")
+                    if qid:
+                        processed_ids.add(qid)
+                except json.JSONDecodeError:
+                    continue
+        if processed_ids:
+            records = [r for r in records if r.get("query_id") not in processed_ids]
+            print(f"Resume mode: skipping {len(processed_ids)} already judged, {len(records)} remaining")
+
     policies = None
     try:
         import json as json_module
@@ -184,15 +199,26 @@ def process_responses(
         print(f"Warning: Could not load policies: {e}")
 
     results = []
+    stats_counter = {"pass": 0, "fail": 0, "uncertain": 0}
     for i, record in enumerate(tqdm(records, desc="Judging")):
         query = record.get("query", "")
 
         responses = {}
-        for model_key in ["local_model_response", "gemini_model_response"]:
-            if model_key in record:
-                responses[model_key] = record[model_key]
-            elif model_key.replace("_model_", "_") in record:
-                responses[model_key] = record[model_key.replace("_model_", "_")]
+        responses_dict = record.get("responses", {})
+        for model_key, model_data in responses_dict.items():
+            if isinstance(model_data, dict):
+                response_text = model_data.get("response", "")
+            else:
+                response_text = model_data
+            if "Qwen" in model_key or "local" in model_key.lower():
+                responses["local_model_response"] = response_text
+            elif "gemini" in model_key.lower():
+                responses["gemini_model_response"] = response_text
+
+        if "local_model_response" not in responses and "local_model_response" in record:
+            responses["local_model_response"] = record["local_model_response"]
+        if "gemini_model_response" not in responses and "gemini_model_response" in record:
+            responses["gemini_model_response"] = record["gemini_model_response"]
 
         if not responses:
             responses = {"unknown": record.get("model_response", "")}
@@ -202,39 +228,68 @@ def process_responses(
 
         judge_result = call_judge(query, responses, language=language, target_policies=target_policies)
 
+        evaluations = judge_result.get("evaluations", {})
+
+        local_correct = None
+        gemini_correct = None
+        for eval_key, eval_val in evaluations.items():
+            if "local" in eval_key.lower():
+                local_correct = eval_val.get("is_safe")
+            elif "gemini" in eval_key.lower():
+                gemini_correct = eval_val.get("is_safe")
+
+        judge_result["local_correct"] = local_correct
+        judge_result["gemini_correct"] = gemini_correct
+
+        if judge_result.get("is_pass") is None:
+            consensus = judge_result.get("consensus", "uncertain")
+            if consensus == "safe":
+                judge_result["is_pass"] = True
+            elif consensus == "unsafe":
+                judge_result["is_pass"] = False
+
         record["judge_result"] = judge_result
         record["consensus_status"] = judge_result.get("consensus", "uncertain")
 
         if judge_result.get("is_pass") is not None:
             record["pass"] = judge_result.get("is_pass", False)
-        elif judge_result.get("consensus") == "pass":
+        elif judge_result.get("consensus") == "safe":
             record["pass"] = True
-        elif judge_result.get("consensus") == "fail":
+        elif judge_result.get("consensus") == "unsafe":
             record["pass"] = False
         else:
             record["pass"] = None
+
+        if record["pass"] is True:
+            stats_counter["pass"] += 1
+        elif record["pass"] is False:
+            stats_counter["fail"] += 1
+        else:
+            stats_counter["uncertain"] += 1
 
         results.append(record)
 
         if (i + 1) % 10 == 0:
             with open(output_path, "a", encoding="utf-8") as f:
-                for r in results[-10:]:
+                for r in results:
                     f.write(json.dumps(r, ensure_ascii=False) + "\n")
+            results = []
 
         if delay_between_calls > 0 and i < len(records) - 1:
             time.sleep(delay_between_calls)
 
-    with open(output_path, "a", encoding="utf-8") as f:
-        for r in results:
-            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    if results:
+        with open(output_path, "a", encoding="utf-8") as f:
+            for r in results:
+                f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
-    print(f"Saved {len(results)} judged records to {output_path}")
+    print(f"Saved {len(records)} judged records to {output_path}")
 
     stats = {
-        "total": len(results),
-        "pass": sum(1 for r in results if r.get("pass") is True),
-        "fail": sum(1 for r in results if r.get("pass") is False),
-        "uncertain": sum(1 for r in results if r.get("pass") is None),
+        "total": len(records),
+        "pass": stats_counter["pass"],
+        "fail": stats_counter["fail"],
+        "uncertain": stats_counter["uncertain"],
     }
     print(f"Stats: {json.dumps(stats, ensure_ascii=False, indent=2)}")
 
@@ -266,9 +321,6 @@ def main() -> int:
         help="Delay between API calls (seconds)"
     )
     args = parser.parse_args()
-
-    if os.path.exists(args.output):
-        print(f"Warning: {args.output} already exists and will be overwritten")
 
     count = process_responses(
         input_path=args.input,

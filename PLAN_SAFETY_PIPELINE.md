@@ -1,7 +1,7 @@
 # Safety Router Golden Dataset Pipeline - Kế hoạch thực hiện
 
 > **Ngày tạo:** 2026-06-17
-> **Ngày cập nhật:** 2026-06-18
+> **Ngày cập nhật:** 2026-06-22
 > **Trạng thái:** Đang triển khai
 
 ---
@@ -56,8 +56,11 @@ Tạo golden dataset để train ML router cho Safety Router.
 | 1 | Chạy query generation (3 models × 2 languages) | Cao | 1,980 queries output |
 | 2 | Chạy Qwen3-4B trên Colab (all 6 query files) | Cao | HF Transformers + GPU |
 | 3 | Chạy Gemini API (all 6 query files) | Cao | Gọi trực tiếp từ local |
-| 4 | LLM-as-Judge | Trung | ENG + VNI judges |
-| 5 | Merge + export golden dataset | Trung | 3,960 responses total |
+| 4 | Merge responses (Step 4) | Trung | Merge 6 files thành merged.jsonl |
+| 5 | LLM-as-Judge (Step 5) | Trung | ENG + VNI judges |
+| 5a | Human Review (Step 5a) | Cao | Review TẤT CẢ cases, edit nếu cần |
+| 6 | Determine Easy/Hard (Step 6) | Cao | easy=both correct, hard=local wrong gemini right |
+| 7 | Export + Split (Step 7) | Trung | golden_dataset + train/dev/test |
 
 ---
 
@@ -88,38 +91,62 @@ Tạo golden dataset để train ML router cho Safety Router.
 │  Script: scripts/run_local_generation.py                         │
 │  Model: Qwen/Qwen3-4B-Instruct-2507                              │
 │  Input: ALL 6 query files (upload to Colab)                     │
-│  Output: queries_{model}_local_{lang}.jsonl                     │
-│      - queries_minimax_local_vni.jsonl                           │
-│      - queries_deepseek_local_vni.jsonl                         │
-│      - queries_qwen_local_vni.jsonl                             │
+│  Output: answers_{model}_local_{lang}.jsonl                     │
+│      - answers_minimax_local_vni.jsonl                           │
+│      - answers_deepseek_local_vni.jsonl                         │
+│      - answers_qwen_local_vni.jsonl                             │
 │      (same pattern for eng)                                      │
 └─────────────────────────────────────────────────────────────────┘
-                                ↓
+                                 ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │         STEP 3: Response Generation (Gemini - API)               │
 │  Script: scripts/run_gemini_generation.py                         │
 │  Model: gemini-3.1-flash-lite (API)                              │
 │  Input: ALL 6 query files                                       │
-│  Output: queries_{model}_gemini_{lang}.jsonl                    │
+│  Output: answers_{model}_gemini_{lang}.jsonl                    │
 └─────────────────────────────────────────────────────────────────┘
-                                ↓
+                                 ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│                    STEP 4: LLM-as-Judge                          │
+│               STEP 4: Merge Responses                               │
+│  Script: scripts/merge_and_export.py                              │
+│  Command: merge                                                  │
+│  Input: 6 response files (3 query models × 2 response models)    │
+│  Output: merged_{lang}.jsonl                                      │
+└─────────────────────────────────────────────────────────────────┘
+                                  ↓
+┌─────────────────────────────────────────────────────────────────┐
+│                    STEP 5: LLM-as-Judge                          │
 │  Script: scripts/judge_responses.py                                │
 │  Judge ENG: DeepSeek-V4-Pro / qwq-max                            │
 │  Judge VNI: qwen3-235b / DeepSeek-V3.2                           │
 │  Output: judged_{lang}.jsonl                                     │
 └─────────────────────────────────────────────────────────────────┘
-                                ↓
+                                  ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│               STEP 5: Merge + Export                              │
+│          STEP 5a: Human Review (Streamlit App)                    │
+│  Script: scripts/streamlit_human_review.py                         │
+│  Review: TẤT CẢ cases                                            │
+│  Edit: response, judgment, consensus if needed                   │
+│  Output: reviewed_{lang}.jsonl (with human_review flag)          │
+└─────────────────────────────────────────────────────────────────┘
+                                  ↓
+┌─────────────────────────────────────────────────────────────────┐
+│           STEP 6: Determine Easy/Hard (Automatic)                  │
+│  Script: scripts/determine_difficulty.py                           │
+│  Logic:                                                           │
+│      easy: local_correct AND gemini_correct                        │
+│      hard: local_wrong AND gemini_correct                          │
+│  Note: Both wrong = excluded (not useful for training)            │
+│  Output: Adds "difficulty" field (easy/hard)                      │
+└─────────────────────────────────────────────────────────────────┘
+                                  ↓
+┌─────────────────────────────────────────────────────────────────┐
+│               STEP 7: Export + Split                              │
 │  Script: scripts/merge_and_export.py                              │
-│  Commands: merge, export, split                                   │
+│  Commands: export, split                                          │
 │  Final Output:                                                   │
-│      - golden_dataset_vni.jsonl                                   │
-│      - golden_dataset_eng.jsonl                                   │
-│  Total: 330 queries × 3 models × 2 response models × 2 languages  │
-│       = 3,960 responses                                          │
+│      - golden_dataset_vni.jsonl (with difficulty label)           │
+│      - golden_dataset_eng.jsonl (with difficulty label)           │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -157,24 +184,30 @@ LLMRouter/
         ├── queries_deepseek_eng.jsonl    # 330 queries
         ├── queries_qwen_vni.jsonl        # 330 queries
         ├── queries_qwen_eng.jsonl        # 330 queries
-        # STEP 2: Qwen3-4B responses (6 files)
-        ├── queries_minimax_local_vni.jsonl
-        ├── queries_minimax_local_eng.jsonl
-        ├── queries_deepseek_local_vni.jsonl
-        ├── queries_deepseek_local_eng.jsonl
-        ├── queries_qwen_local_vni.jsonl
-        ├── queries_qwen_local_eng.jsonl
-        # STEP 3: Gemini responses (6 files)
-        ├── queries_minimax_gemini_vni.jsonl
-        ├── queries_minimax_gemini_eng.jsonl
-        ├── queries_deepseek_gemini_vni.jsonl
-        ├── queries_deepseek_gemini_eng.jsonl
-        ├── queries_qwen_gemini_vni.jsonl
-        ├── queries_qwen_gemini_eng.jsonl
-        # STEP 4: After merge
+        # STEP 2: Qwen3-4B answers (6 files) - output from local model
+        ├── answers_minimax_local_vni.jsonl
+        ├── answers_minimax_local_eng.jsonl
+        ├── answers_deepseek_local_vni.jsonl
+        ├── answers_deepseek_local_eng.jsonl
+        ├── answers_qwen_local_vni.jsonl
+        ├── answers_qwen_local_eng.jsonl
+        # STEP 3: Gemini answers (6 files) - output from Gemini API
+        ├── answers_minimax_gemini_vni.jsonl
+        ├── answers_minimax_gemini_eng.jsonl
+        ├── answers_deepseek_gemini_vni.jsonl
+        ├── answers_deepseek_gemini_eng.jsonl
+        ├── answers_qwen_gemini_vni.jsonl
+        ├── answers_qwen_gemini_eng.jsonl
+        # STEP 4: After merge (6 answer files merged into 1)
         ├── merged_vni.jsonl
         ├── merged_eng.jsonl
-        # STEP 5: Final output
+        # STEP 5: After judge
+        ├── judged_vni.jsonl
+        ├── judged_eng.jsonl
+        # STEP 5a: After human review
+        ├── reviewed_vni.jsonl
+        ├── reviewed_eng.jsonl
+        # STEP 6: After determine_difficulty (golden dataset with difficulty label)
         └── golden_dataset_*.jsonl
 ```
 
@@ -243,7 +276,7 @@ python scripts/generate_queries.py \
 
 ### 6.2 run_local_generation.py
 
-Chạy Qwen3-4B trên Colab (GPU).
+Chạy Qwen3-4B trên Colab (GPU). Hỗ trợ resume - nếu output file đã tồn tại, sẽ skip các query đã xử lý.
 
 ```bash
 # Colab setup
@@ -251,35 +284,57 @@ Chạy Qwen3-4B trên Colab (GPU).
 %cd LLMRouter
 !pip install transformers torch accelerate
 
-# Run generation
+# Run generation (tự động resume nếu file đã có)
 !python scripts/run_local_generation.py \
-    --input artifacts/safety_queries/queries_vni.jsonl \
-    --output artifacts/safety_queries/queries_local_vni.jsonl \
+    --input artifacts/safety_queries/queries_minimax_vni.jsonl \
+    --output artifacts/safety_queries/answers_minimax_local_vni.jsonl \
     --model-name "Qwen/Qwen3-4B-Instruct-2507" \
     --batch-size 8
 
 # Download output
 # from google.colab import files
-# files.download("artifacts/safety_queries/queries_local_vni.jsonl")
+# files.download("artifacts/safety_queries/answers_minimax_local_vni.jsonl")
 ```
 
 ### 6.3 run_gemini_generation.py
 
-Gọi Gemini API.
+Gọi Gemini API. Hỗ trợ resume - nếu output file đã tồn tại, sẽ skip các query đã xử lý.
 
 ```bash
+# Vietnamese - Gemini (tự động resume nếu file đã có)
 python scripts/run_gemini_generation.py \
-    --input artifacts/safety_queries/queries_vni.jsonl \
-    --output artifacts/safety_queries/queries_gemini_vni.jsonl
+    --input artifacts/safety_queries/queries_minimax_vni.jsonl \
+    --output artifacts/safety_queries/answers_minimax_gemini_vni.jsonl
+
+# English - Gemini
+python scripts/run_gemini_generation.py \
+    --input artifacts/safety_queries/queries_minimax_eng.jsonl \
+    --output artifacts/safety_queries/answers_minimax_gemini_eng.jsonl
 
 # Options
 --model-name "gemini-3.1-flash-lite"
 --delay 1.0  # Delay between calls
 ```
 
-### 6.4 judge_responses.py
+### 6.4 merge_and_export.py
 
-LLM-as-Judge đánh giá responses.
+Merge answers từ 6 response files (split được thực hiện ở Step 7)
+
+```bash
+# Merge 6 answer files (3 query models × 2 response models)
+python scripts/merge_and_export.py merge \
+    --inputs artifacts/safety_queries/answers_minimax_local_vni.jsonl \
+            artifacts/safety_queries/answers_deepseek_local_vni.jsonl \
+            artifacts/safety_queries/answers_qwen_local_vni.jsonl \
+            artifacts/safety_queries/answers_minimax_gemini_vni.jsonl \
+            artifacts/safety_queries/answers_deepseek_gemini_vni.jsonl \
+            artifacts/safety_queries/answers_qwen_gemini_vni.jsonl \
+    --output artifacts/safety_queries/merged_vni.jsonl
+```
+
+### 6.5 judge_responses.py
+
+LLM-as-Judge đánh giá responses. Hỗ trợ resume - nếu output file đã tồn tại, sẽ skip các query đã được judge.
 
 ```bash
 python scripts/judge_responses.py \
@@ -291,29 +346,37 @@ python scripts/judge_responses.py \
 --delay 1.0  # Delay between calls
 ```
 
-### 6.5 merge_and_export.py
+### 6.6 streamlit_human_review.py
 
-Merge responses và export golden dataset.
+Streamlit app cho human review TẤT CẢ cases. Cho phép edit response, judgment, consensus.
 
 ```bash
-# Merge local + gemini
-python scripts/merge_and_export.py merge \
-    --local artifacts/safety_queries/queries_local_vni.jsonl \
-    --gemini artifacts/safety_queries/queries_gemini_vni.jsonl \
-    --output artifacts/safety_queries/merged_vni.jsonl
+# Run streamlit app
+streamlit run scripts/streamlit_human_review.py -- \
+    --input artifacts/safety_queries/judged_vni.jsonl \
+    --output artifacts/safety_queries/reviewed_vni.jsonl
 
-# Export golden dataset
-python scripts/merge_and_export.py export \
-    --input artifacts/safety_queries/merged_vni.jsonl \
+# App features:
+# - View all queries with local/gemini responses and judge verdicts
+# - Edit any field (response, judgment, consensus)
+# - Filter by query_id, policy, difficulty
+# - Mark as reviewed
+# - Export after review
+```
+
+### 6.7 determine_difficulty.py
+
+Tự động xác định easy/hard queries dựa trên judge results.
+
+```bash
+python scripts/determine_difficulty.py \
+    --input artifacts/safety_queries/reviewed_vni.jsonl \
     --output artifacts/safety_queries/golden_dataset_vni.jsonl
 
-# Split train/dev/test
-python scripts/merge_and_export.py split \
-    --input artifacts/safety_queries/golden_dataset_vni.jsonl \
-    --output-dir artifacts/safety_queries/splits_vni \
-    --train-ratio 0.7 \
-    --dev-ratio 0.15 \
-    --test-ratio 0.15
+# Logic:
+#   easy: local_correct=True AND gemini_correct=True
+#   hard: local_correct=False AND gemini_correct=True
+#   (Both wrong = excluded from dataset)
 ```
 
 ---
@@ -342,33 +405,48 @@ git push
 # STEP 2: Run on Colab (Qwen3-4B) for all 6 query files
 # - Clone repo on Colab
 # - Upload all 6 queries_*.jsonl files
-# - Run for each: python scripts/run_local_generation.py --input ... --output ...
-# - Download queries_*_local_*.jsonl files
+# - Run for each: python scripts/run_local_generation.py --input ... --output answers_*_local_*.jsonl
+# - Download answers_*_local_*.jsonl files
 
 # STEP 3: Run Gemini (local) for all 6 query files
 for lang in vni eng; do
   for model in minimax deepseek qwen; do
     python scripts/run_gemini_generation.py \
       --input artifacts/safety_queries/queries_${model}_${lang}.jsonl \
-      --output artifacts/safety_queries/queries_${model}_gemini_${lang}.jsonl
+      --output artifacts/safety_queries/answers_${model}_gemini_${lang}.jsonl
   done
 done
 
-# STEP 4: Merge + Judge
+# STEP 4: Merge (combine all 6 answer files into one)
 python scripts/merge_and_export.py merge \
-  --inputs artifacts/safety_queries/queries_minimax_local_vni.jsonl \
-          artifacts/safety_queries/queries_deepseek_local_vni.jsonl \
-          artifacts/safety_queries/queries_qwen_local_vni.jsonl \
-          artifacts/safety_queries/queries_minimax_gemini_vni.jsonl \
-          artifacts/safety_queries/queries_deepseek_gemini_vni.jsonl \
-          artifacts/safety_queries/queries_qwen_gemini_vni.jsonl \
+  --inputs artifacts/safety_queries/answers_minimax_local_vni.jsonl \
+          artifacts/safety_queries/answers_deepseek_local_vni.jsonl \
+          artifacts/safety_queries/answers_qwen_local_vni.jsonl \
+          artifacts/safety_queries/answers_minimax_gemini_vni.jsonl \
+          artifacts/safety_queries/answers_deepseek_gemini_vni.jsonl \
+          artifacts/safety_queries/answers_qwen_gemini_vni.jsonl \
   --output artifacts/safety_queries/merged_vni.jsonl
 
+# STEP 5: Judge (evaluate merged responses)
 python scripts/judge_responses.py --input merged_vni.jsonl --output judged_vni.jsonl --language vi
 
-# STEP 5: Export
-python scripts/merge_and_export.py export --input judged_vni.jsonl --output golden_dataset_vni.jsonl
-python scripts/merge_and_export.py split --input golden_dataset_vni.jsonl --output-dir splits_vni
+# STEP 5a: Human Review (Streamlit app)
+streamlit run scripts/streamlit_human_review.py -- --input judged_vni.jsonl --output reviewed_vni.jsonl
+# Review TẤT CẢ cases trên giao diện web, edit nếu cần
+# Sau khi review xong, click "Export" trong app
+
+# STEP 6: Determine Easy/Hard
+python scripts/determine_difficulty.py \
+    --input artifacts/safety_queries/reviewed_vni.jsonl \
+    --output artifacts/safety_queries/golden_dataset_vni.jsonl
+
+# STEP 7: Split train/dev/test
+python scripts/merge_and_export.py split \
+    --input artifacts/safety_queries/golden_dataset_vni.jsonl \
+    --output-dir artifacts/safety_queries/splits_vni \
+    --train-ratio 0.7 \
+    --dev-ratio 0.15 \
+    --test-ratio 0.15
 ```
 
 ---
@@ -380,6 +458,7 @@ python scripts/merge_and_export.py split --input golden_dataset_vni.jsonl --outp
 3. **2 Response Generation Models** - Qwen3-4B (Colab) + Gemini (API)
 4. **Colab cho Qwen3-4B** - local machine không chạy nổi 4B model
 5. **Không lưu keys trong code** - dùng `.env`
+6. **Resume mode** - `run_gemini_generation.py`, `run_local_generation.py`, và `judge_responses.py` đều hỗ trợ resume. Nếu output file đã tồn tại, sẽ tự động skip các query đã xử lý.
 
 ---
 
@@ -392,7 +471,9 @@ python scripts/merge_and_export.py split --input golden_dataset_vni.jsonl --outp
 | `scripts/run_local_generation.py` | Qwen3-4B on Colab |
 | `scripts/run_gemini_generation.py` | Gemini API calls |
 | `scripts/judge_responses.py` | LLM-as-Judge |
-| `scripts/merge_and_export.py` | Merge + Export |
+| `scripts/streamlit_human_review.py` | Human review UI (Streamlit) |
+| `scripts/determine_difficulty.py` | Auto determine easy/hard |
+| `scripts/merge_and_export.py` | Merge + Split only (export via determine_difficulty.py) |
 
 ## 10. Model Configuration (.env)
 
@@ -408,3 +489,177 @@ ALIBABA_QUERY_SUB2=qwen3.7-max (backup)
 LOCAL_GENERATION_MODEL=Qwen/Qwen3-4B-Instruct-2507
 GEMINI_GENERATION_NAME=gemini-3.1-flash-lite
 ```
+
+---
+
+## 11. Data Format (JSON Fields)
+
+### 11.1 `answers_*_local_*.jsonl` (Step 2 - 3)
+
+```json
+{
+  "query_id": "string",
+  "query": "string",
+  "policy_ids": ["P01", "P02"],
+  "policy_names": ["string"],
+  "designed_complexity": "low|medium|high",
+  "policy_match_type": "single_policy|multi_policy|no_policy",
+  "group_type": "string",
+  "language": "vi|en",
+  "query_model": "minimax|deepseek|qwen",
+  "model_name": "Qwen/Qwen3-4B-Instruct-2507",
+  "model_response": "string",
+  "response_time": 0.0,
+  "error": null
+}
+```
+
+### 11.2 `answers_*_gemini_*.jsonl` (Step 3)
+
+```json
+{
+  "query_id": "string",
+  "query": "string",
+  "policy_ids": ["P01", "P02"],
+  "policy_names": ["string"],
+  "designed_complexity": "low|medium|high",
+  "policy_match_type": "single_policy|multi_policy|no_policy",
+  "group_type": "string",
+  "language": "vi|en",
+  "query_model": "minimax|deepseek|qwen",
+  "model_name": "gemini-3.1-flash-lite",
+  "model_response": "string",
+  "response_time": 0.0,
+  "error": null
+}
+```
+
+### 11.3 `merged_vni.jsonl` (Step 4)
+
+```json
+{
+  "query_id": "string",
+  "query": "string",
+  "policy_ids": ["P01", "P02"],
+  "policy_names": ["string"],
+  "designed_complexity": "low|medium|high",
+  "policy_match_type": "single_policy|multi_policy|no_policy",
+  "group_type": "string",
+  "language": "vi|en",
+  "responses": {
+    "Qwen/Qwen3-4B-Instruct-2507": {
+      "response": "string",
+      "response_time": 0.0,
+      "error": null
+    },
+    "gemini-3.1-flash-lite": {
+      "response": "string",
+      "response_time": 0.0,
+      "error": null
+    }
+  }
+}
+```
+
+### 11.4 `judged_vni.jsonl` (Step 5)
+
+```json
+{
+  "query_id": "string",
+  "query": "string",
+  "policy_ids": ["P01", "P02"],
+  "policy_names": ["string"],
+  "designed_complexity": "low|medium|high",
+  "policy_match_type": "single_policy|multi_policy|no_policy",
+  "group_type": "string",
+  "language": "vi|en",
+  "responses": {
+    "Qwen/Qwen3-4B-Instruct-2507": {
+      "response": "string",
+      "response_time": 0.0,
+      "error": null
+    },
+    "gemini-3.1-flash-lite": {
+      "response": "string",
+      "response_time": 0.0,
+      "error": null
+    }
+  },
+  "judge_result": {
+    "consensus": "pass|fail|uncertain",
+    "is_pass": true|false|null,
+    "local_correct": true|false|null,
+    "gemini_correct": true|false|null,
+    "reasoning": "string",
+    "judge_model": "string",
+    "judge_type": "primary|backup",
+    "error": null
+  },
+  "consensus_status": "pass|fail|uncertain",
+  "pass": true|false|null
+}
+```
+
+### 11.5 `reviewed_vni.jsonl` (Step 5a - after human review)
+
+```json
+{
+  "query_id": "string",
+  "query": "string",
+  "policy_ids": ["P01", "P02"],
+  "policy_names": ["string"],
+  "designed_complexity": "low|medium|high",
+  "policy_match_type": "single_policy|multi_policy|no_policy",
+  "group_type": "string",
+  "language": "vi|en",
+  "responses": {
+    "Qwen/Qwen3-4B-Instruct-2507": {
+      "response": "string",
+      "response_time": 0.0,
+      "error": null
+    },
+    "gemini-3.1-flash-lite": {
+      "response": "string",
+      "response_time": 0.0,
+      "error": null
+    }
+  },
+  "judge_result": {
+    "consensus": "pass|fail|uncertain",
+    "is_pass": true|false|null,
+    "local_correct": true|false|null,
+    "gemini_correct": true|false|null,
+    "reasoning": "string",
+    "judge_model": "string",
+    "judge_type": "primary|backup",
+    "error": null
+  },
+  "consensus_status": "pass|fail|uncertain",
+  "pass": true|false|null,
+  "human_reviewed": true
+}
+```
+
+### 11.6 `golden_dataset_vni.jsonl` (Step 6 - final)
+
+```json
+{
+  "query_id": "string",
+  "user_prompt": "string",
+  "policy_ids": ["P01", "P02"],
+  "designed_complexity": "low|medium|high",
+  "group_type": "string",
+  "language": "vi|en",
+  "difficulty": "easy|hard",
+  "local_response": "string",
+  "gemini_response": "string",
+  "judge_consensus": "pass|fail|uncertain",
+  "human_reviewed": true
+}
+```
+
+**Notes:**
+- `difficulty=easy`: local_correct=True AND gemini_correct=True
+- `difficulty=hard`: local_correct=False AND gemini_correct=True
+- Records where both models agree on wrong or uncertain are excluded
+

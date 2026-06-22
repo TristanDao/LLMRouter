@@ -162,12 +162,16 @@ def process_queries(
     if os.path.exists(output_path):
         with open(output_path, "r", encoding="utf-8") as f:
             for line in f:
-                obj = json.loads(line)
-                if "id" in obj:
-                    processed_ids.add(obj["id"])
+                try:
+                    obj = json.loads(line)
+                    qid = obj.get("query_id")
+                    if qid:
+                        processed_ids.add(qid)
+                except json.JSONDecodeError:
+                    continue
         if processed_ids:
             resume_mode = True
-            queries = [q for q in queries if q.get("id") not in processed_ids]
+            queries = [q for q in queries if q.get("query_id") not in processed_ids]
             print(f"Resume mode: skipping {len(processed_ids)} already processed queries, {len(queries)} remaining")
 
     results = []

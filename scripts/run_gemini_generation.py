@@ -25,7 +25,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 if str(PROJECT_ROOT) not in sys.path:
@@ -140,6 +140,21 @@ def process_queries(
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
+    processed_ids = set()
+    if os.path.exists(output_path):
+        with open(output_path, "r", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    obj = json.loads(line)
+                    qid = obj.get("query_id")
+                    if qid:
+                        processed_ids.add(qid)
+                except json.JSONDecodeError:
+                    continue
+        if processed_ids:
+            queries = [q for q in queries if q.get("query_id") not in processed_ids]
+            print(f"Resume mode: skipping {len(processed_ids)} already processed, {len(queries)} remaining")
+
     results = []
     for i, query_obj in enumerate(tqdm(queries, desc="Generating")):
         query_text = query_obj.get("query", "")
@@ -169,18 +184,20 @@ def process_queries(
 
         if (i + 1) % 10 == 0:
             with open(output_path, "a", encoding="utf-8") as f:
-                for r in results[-10:]:
+                for r in results:
                     f.write(json.dumps(r, ensure_ascii=False) + "\n")
+            results = []
 
         if delay_between_calls > 0 and i < len(queries) - 1:
             time.sleep(delay_between_calls)
 
-    with open(output_path, "a", encoding="utf-8") as f:
-        for r in results:
-            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    if results:
+        with open(output_path, "a", encoding="utf-8") as f:
+            for r in results:
+                f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
-    print(f"Saved {len(results)} responses to {output_path}")
-    return len(results)
+    print(f"Saved {len(queries)} responses to {output_path}")
+    return len(queries)
 
 
 def main() -> int:
@@ -212,9 +229,6 @@ def main() -> int:
         help="Delay between API calls (seconds)"
     )
     args = parser.parse_args()
-
-    if os.path.exists(args.output):
-        print(f"Warning: {args.output} already exists and will be overwritten")
 
     count = process_queries(
         input_path=args.input,

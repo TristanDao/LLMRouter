@@ -4,6 +4,8 @@
 template: |
   {system_instruction}
 
+  IMPORTANT: Generate all user queries in {language} language only.
+
   Input:
   {{
     "generation_mode": "{generation_mode}",

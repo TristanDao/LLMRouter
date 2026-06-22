@@ -35,3 +35,4 @@ archive/
 figs/
 sections/
 routing_log.jsonl
+artifacts/safety_queries/answers*.jsonl
