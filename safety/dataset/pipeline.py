@@ -953,7 +953,6 @@ class SafetyGoldenDatasetBuilder:
         if preferred_model:
             if preferred_model in model_keys_primary:
                 model_keys_primary = [preferred_model]
-                model_keys_backup = []
             elif preferred_model in model_keys_backup:
                 model_keys_primary = []
                 model_keys_backup = [preferred_model]

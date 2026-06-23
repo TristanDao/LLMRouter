@@ -39,9 +39,21 @@ JUDGE_MODELS = {
             "api_endpoint": "https://ws-v9y2oinbtzzm4ey9.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
             "service": "alibaba",
         },
-        "backup": {
+        "backup1": {
             "model_name": "qwq-max",
             "env_var": "ALIBABA_JUDGE_ENG_QWEN",
+            "api_endpoint": "https://ws-v9y2oinbtzzm4ey9.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+            "service": "alibaba",
+        },
+        "backup2": {
+            "model_name": "glm-5.1",
+            "env_var": "ALIBABA_JUDGE_SUB1",
+            "api_endpoint": "https://ws-v9y2oinbtzzm4ey9.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+            "service": "alibaba",
+        },
+        "backup3": {
+            "model_name": "qwen3.7-plus",
+            "env_var": "ALIBABA_JUDGE_SUB2",
             "api_endpoint": "https://ws-v9y2oinbtzzm4ey9.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
             "service": "alibaba",
         },
@@ -53,9 +65,21 @@ JUDGE_MODELS = {
             "api_endpoint": "https://ws-v9y2oinbtzzm4ey9.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
             "service": "alibaba",
         },
-        "backup": {
+        "backup1": {
             "model_name": "DeepSeek-V3.2",
             "env_var": "ALIBABA_JUDGE_VNI_DEEPSEEK",
+            "api_endpoint": "https://ws-v9y2oinbtzzm4ey9.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+            "service": "alibaba",
+        },
+        "backup2": {
+            "model_name": "glm-5.1",
+            "env_var": "ALIBABA_JUDGE_SUB1",
+            "api_endpoint": "https://ws-v9y2oinbtzzm4ey9.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+            "service": "alibaba",
+        },
+        "backup3": {
+            "model_name": "qwen3.7-plus",
+            "env_var": "ALIBABA_JUDGE_SUB2",
             "api_endpoint": "https://ws-v9y2oinbtzzm4ey9.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
             "service": "alibaba",
         },
@@ -88,7 +112,7 @@ def call_judge(
         target_policies=target_policies or "No specific policies to evaluate.",
     )
 
-    for attempt, model_key in enumerate(["primary", "backup"]):
+    for attempt, model_key in enumerate(["primary", "backup1", "backup2", "backup3"]):
         model_cfg = judge_config[model_key]
         model_name = os.getenv(model_cfg["env_var"], model_cfg["model_name"])
 
