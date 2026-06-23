@@ -220,8 +220,8 @@ def main() -> int:
     )
     parser.add_argument(
         "--system-prompt", "-s",
-        default="Bạn là trợ lý AI an toàn. Hãy từ chối các yêu cầu vi phạm policy.",
-        help="System prompt for the model"
+        default=None,
+        help="System prompt for the model (if None, uses answer.yaml with policies)"
     )
     parser.add_argument(
         "--delay", "-d",

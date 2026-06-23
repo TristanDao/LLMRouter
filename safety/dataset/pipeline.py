@@ -403,6 +403,7 @@ class SafetyGoldenDatasetBuilder:
         section_offsets: dict = None,
         multi_custom_groups: List[List[int]] = None,
     ) -> List[GoldenQuerySpec]:
+        print(f"[DEBUG] build_queries_with_llm START: generation_offset={generation_offset}, section_offsets={section_offsets}")
         """
         Generate queries using LLM.
         
@@ -470,9 +471,15 @@ class SafetyGoldenDatasetBuilder:
                     else:
                         queries.append(query_spec)
 
+        print(f"[DEBUG] build_queries_with_llm: Done with single_policy, queries count so far: {len(queries)}")
+        print(f"[DEBUG] build_queries_with_llm: multi_skip_batches={multi_skip_batches}, multi_skip_items={multi_skip_items}")
+
         # Multi policy: load only group policies
-        for group_index, group in enumerate(self._get_multi_groups(all_policies, multi_groups, multi_custom_groups)):
+        multi_groups_result = self._get_multi_groups(all_policies, multi_groups, multi_custom_groups)
+        print(f"[DEBUG] build_queries_with_llm: _get_multi_groups returned {len(multi_groups_result)} groups")
+        for group_index, group in enumerate(multi_groups_result):
             for complexity in ["medium", "high"]:
+                print(f"[DEBUG] multi_policy: group={group_index}, complexity={complexity}, skip_batches={multi_skip_batches}")
                 if multi_skip_batches > 0:
                     multi_skip_batches -= 1
                     continue
@@ -481,6 +488,7 @@ class SafetyGoldenDatasetBuilder:
                 group_policies = [p for p in all_policies if p.policy_id in group_ids]
                 policy_map = {p.policy_id: p for p in group_policies}
                 policy_context = self._build_policy_context_for_ids(group_ids, policy_map)
+                print(f"[DEBUG] Calling _generate_queries_with_llm for multi_policy group {group_index}, complexity {complexity}")
                 llm_results = self._generate_queries_with_llm(
                     generation_mode="multi_policy",
                     target_policies=group_ids,
@@ -490,6 +498,7 @@ class SafetyGoldenDatasetBuilder:
                     language=language,
                     preferred_model=preferred_model,
                 )
+                print(f"[DEBUG] multi_policy group {group_index} returned {len(llm_results)} results")
                 for item in llm_results:
                     if multi_skip_items > 0:
                         multi_skip_items -= 1
@@ -501,6 +510,9 @@ class SafetyGoldenDatasetBuilder:
                         streaming_callback(query_spec)
                     else:
                         queries.append(query_spec)
+
+        print(f"[DEBUG] build_queries_with_llm: Done with multi_policy, queries count so far: {len(queries)}")
+        print(f"[DEBUG] build_queries_with_llm: no_skip_batches={no_skip_batches}, no_skip_items={no_skip_items}")
 
         # No policy: no policy context needed
         for complexity in ["low", "medium", "high"]:
@@ -699,13 +711,18 @@ class SafetyGoldenDatasetBuilder:
         Returns:
             List of policy groups (each group is a list of PolicySpec objects)
         """
+        print(f"[DEBUG] _get_multi_groups CALLED: policies={len(policies)}, multi_groups={multi_groups}, custom_groups={custom_groups is not None}")
         if custom_groups:
             policy_map = {p.policy_id: p for p in policies}
+            print(f"[DEBUG] _get_multi_groups: custom_groups={custom_groups}")
+            print(f"[DEBUG] _get_multi_groups: policy_ids in map = {list(policy_map.keys())}")
             result = []
             for group_ids in custom_groups:
-                group = [policy_map[pid] for pid in group_ids if pid in policy_map]
+                group = [policy_map[str(pid)] for pid in group_ids if str(pid) in policy_map]
+                print(f"[DEBUG] _get_multi_groups: group_ids={group_ids}, matched={len(group)}")
                 if len(group) >= 2:
                     result.append(group)
+            print(f"[DEBUG] _get_multi_groups: returning {len(result)} groups")
             return result[:multi_groups]
         
         return self._default_multi_groups(policies, multi_groups)
@@ -923,9 +940,11 @@ class SafetyGoldenDatasetBuilder:
         language: str = "vi",
         preferred_model: str = None,
     ) -> List[Dict[str, Any]]:
+        print(f"[DEBUG] _generate_queries_with_llm CALLED: mode={generation_mode}, preferred_model={preferred_model}")
         from llmrouter.prompts import load_prompt_template
 
         query_models = self._load_query_model_config()
+        print(f"[DEBUG] query_models keys: {list(query_models.keys())}")
         results: List[Dict[str, Any]] = []
 
         model_keys_primary = ["minimax", "deepseek", "qwen"]
@@ -942,6 +961,7 @@ class SafetyGoldenDatasetBuilder:
                 model_keys_primary = [preferred_model]
                 model_keys_backup = []
 
+        print(f"[DEBUG] _generate_queries_with_llm: model_keys_primary={model_keys_primary}")
         for model_key in model_keys_primary:
             if model_key not in query_models:
                 print(f"[DEBUG] Model {model_key} not in query_models config, skipping")
@@ -990,7 +1010,8 @@ class SafetyGoldenDatasetBuilder:
                         "service": model_config["service"],
                         "max_tokens": 8192,
                     }
-                    response = call_api(payload)
+                    timeout = 600 if generation_mode == "no_policy" else 180
+                    response = call_api(payload, timeout=timeout)
                     print(f"[DEBUG] API response received: {type(response)}")
                     
                     if response.get("error"):

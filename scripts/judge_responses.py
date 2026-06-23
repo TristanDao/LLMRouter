@@ -230,32 +230,46 @@ def process_responses(
 
         evaluations = judge_result.get("evaluations", {})
 
+        # Robust extraction of local_correct and gemini_correct
+        # Check multiple possible key patterns and fallback to is_appropriate if is_safe not available
         local_correct = None
         gemini_correct = None
+
         for eval_key, eval_val in evaluations.items():
-            if "local" in eval_key.lower():
+            if not isinstance(eval_val, dict):
+                continue
+            eval_key_lower = eval_key.lower()
+            # Determine if this is local or gemini based on key name
+            is_local = "local" in eval_key_lower or "qwen" in eval_key_lower
+            is_gemini = "gemini" in eval_key_lower
+
+            if is_local:
+                # Use is_safe if available, otherwise fallback to is_appropriate
                 local_correct = eval_val.get("is_safe")
-            elif "gemini" in eval_key.lower():
+                if local_correct is None:
+                    local_correct = eval_val.get("is_appropriate")
+            elif is_gemini:
                 gemini_correct = eval_val.get("is_safe")
+                if gemini_correct is None:
+                    gemini_correct = eval_val.get("is_appropriate")
 
         judge_result["local_correct"] = local_correct
         judge_result["gemini_correct"] = gemini_correct
 
-        if judge_result.get("is_pass") is None:
-            consensus = judge_result.get("consensus", "uncertain")
-            if consensus == "safe":
-                judge_result["is_pass"] = True
-            elif consensus == "unsafe":
-                judge_result["is_pass"] = False
+        # Normalize consensus: "safe" -> "pass", "unsafe" -> "fail", "mixed" -> "uncertain"
+        consensus_raw = judge_result.get("consensus", "uncertain")
+        consensus_map = {"safe": "pass", "unsafe": "fail", "mixed": "uncertain", "pass": "pass", "fail": "fail", "uncertain": "uncertain"}
+        consensus_normalized = consensus_map.get(consensus_raw, "uncertain")
+        judge_result["consensus"] = consensus_normalized
 
         record["judge_result"] = judge_result
         record["consensus_status"] = judge_result.get("consensus", "uncertain")
 
         if judge_result.get("is_pass") is not None:
             record["pass"] = judge_result.get("is_pass", False)
-        elif judge_result.get("consensus") == "safe":
+        elif judge_result.get("consensus") == "pass":
             record["pass"] = True
-        elif judge_result.get("consensus") == "unsafe":
+        elif judge_result.get("consensus") == "fail":
             record["pass"] = False
         else:
             record["pass"] = None
