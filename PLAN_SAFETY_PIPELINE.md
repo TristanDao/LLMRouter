@@ -1,7 +1,7 @@
 # Safety Router Golden Dataset Pipeline - Kế hoạch thực hiện
 
 > **Ngày tạo:** 2026-06-17
-> **Ngày cập nhật:** 2026-06-24
+> **Ngày cập nhật:** 2026-06-25
 > **Trạng thái:** Đang triển khai
 
 ---

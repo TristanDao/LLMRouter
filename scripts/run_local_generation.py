@@ -58,23 +58,36 @@ def load_policies():
     return _POLICIES_CACHE
 
 
-def build_all_policies_text(policies: List[Dict]) -> str:
-    """Build all policies text for answer prompt."""
+def build_all_policies_text(policies: List[Dict], policy_ids: List[str] = None) -> str:
+    """Build all policies text for answer prompt.
+
+    Args:
+        policies: List of policy dicts
+        policy_ids: If provided, only include policies matching these IDs. If None, includes all.
+    """
     policy_parts = []
     for p in policies:
-        policy_parts.append(f"- [{p['policy_id']}] {p['policy_name']}: {p['definition']}")
+        if policy_ids is None or str(p['policy_id']) in [str(pid) for pid in policy_ids]:
+            policy_parts.append(f"- [{p['policy_id']}] {p['policy_name']}: {p['definition']}")
     return "\n".join(policy_parts)
 
 
-def build_answer_prompt(query: str, policies: List[Dict], language: str = "vi") -> tuple:
-    """Build system and user prompts using answer.yaml template."""
+def build_answer_prompt(query: str, policies: List[Dict], policy_ids: List[str], language: str = "vi") -> tuple:
+    """Build system and user prompts using answer.yaml template.
+
+    Args:
+        query: The user query
+        policies: List of all policy dicts
+        policy_ids: Only include policies matching these IDs
+        language: 'vi' or 'eng'
+    """
     answer_template = load_prompt_template("answer")
-    all_policies = build_all_policies_text(policies)
+    target_policies = build_all_policies_text(policies, policy_ids)
     lang_display = "Vietnamese" if language == "vi" else "English"
 
     system_prompt = answer_template.format(
         language=lang_display,
-        all_policies=all_policies,
+        all_policies=target_policies,
         query=query,
     )
     return system_prompt, query
@@ -181,9 +194,10 @@ def process_queries(
     for i, query_obj in enumerate(tqdm(queries, desc="Generating")):
         query_text = query_obj.get("query", "")
         language = query_obj.get("language", "vi")
+        policy_ids = query_obj.get("policy_ids", [])
 
         if system_prompt is None:
-            sys_prompt, user_query = build_answer_prompt(query_text, policies, language)
+            sys_prompt, user_query = build_answer_prompt(query_text, policies, policy_ids, language)
         else:
             sys_prompt, user_query = system_prompt, query_text
 

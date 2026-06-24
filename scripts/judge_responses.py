@@ -231,6 +231,9 @@ def process_responses(
         for model_key, model_data in responses_dict.items():
             if isinstance(model_data, dict):
                 response_text = model_data.get("response", "")
+                error = model_data.get("error")
+                if error:
+                    response_text = f"[API_ERROR: {error[:100]}]"
             else:
                 response_text = model_data
             if "Qwen" in model_key or "local" in model_key.lower():
