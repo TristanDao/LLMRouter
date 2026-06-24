@@ -92,9 +92,24 @@ def call_gemini(
     max_tokens: int = 1024,
     temperature: float = 0.01,
     timeout: int = 60,
+    max_retries: int = 5,
+    base_delay: float = 4.0,
 ) -> Dict[str, Any]:
-    """Call Gemini API with a single query."""
+    """Call Gemini API with a single query and retry on rate limit errors.
+
+    Args:
+        query: The user query
+        model_name: Gemini model name
+        system_prompt: System prompt for the model
+        language: 'vi' or 'eng'
+        max_tokens: Max tokens in response
+        temperature: Sampling temperature
+        timeout: Request timeout in seconds
+        max_retries: Maximum number of retries on rate limit errors
+        base_delay: Base delay between retries in seconds (for 15 RPM = 4s)
+    """
     import google.generativeai as genai
+    from google.api_core.exceptions import ResourceExhausted
 
     api_key = os.getenv("GEMINI_API_KEY", "")
     if not api_key:
@@ -107,28 +122,60 @@ def call_gemini(
         system_instruction=system_prompt,
     )
 
-    try:
-        start_time = time.time()
-        response = model.generate_content(
-            query,
-            generation_config={
-                "max_output_tokens": max_tokens,
-                "temperature": temperature,
-            }
-        )
-        elapsed = time.time() - start_time
+    last_error = None
+    for attempt in range(max_retries + 1):
+        try:
+            start_time = time.time()
+            response = model.generate_content(
+                query,
+                generation_config={
+                    "max_output_tokens": max_tokens,
+                    "temperature": temperature,
+                }
+            )
+            elapsed = time.time() - start_time
 
-        return {
-            "response": response.text.strip() if hasattr(response, 'text') else str(response),
-            "response_time": elapsed,
-            "error": None,
-        }
-    except Exception as e:
-        return {
-            "response": "",
-            "error": str(e)[:200],
-            "response_time": 0,
-        }
+            return {
+                "response": response.text.strip() if hasattr(response, 'text') else str(response),
+                "response_time": elapsed,
+                "error": None,
+            }
+        except ResourceExhausted as e:
+            last_error = str(e)[:200]
+            if attempt < max_retries:
+                delay = base_delay * (2 ** attempt)
+                retry_delay = _extract_retry_delay(e) or delay
+                print(f"  [Rate limit] Attempt {attempt + 1}/{max_retries + 1} failed: {last_error}")
+                print(f"  [Rate limit] Retrying in {retry_delay:.1f}s...")
+                time.sleep(retry_delay)
+            else:
+                print(f"  [Rate limit] All {max_retries + 1} attempts failed. Giving up.")
+        except Exception as e:
+            return {
+                "response": "",
+                "error": str(e)[:200],
+                "response_time": 0,
+            }
+
+    return {
+        "response": "",
+        "error": f"[RateLimitExceeded] {last_error}",
+        "response_time": 0,
+    }
+
+
+def _extract_retry_delay(error: Exception) -> Optional[float]:
+    """Extract retry delay from ResourceExhausted error if available."""
+    try:
+        if hasattr(error, 'retry_info') and error.retry_info:
+            return getattr(error.retry_info, 'retry_delay', None)
+        if hasattr(error, 'metadata') and error.metadata:
+            delay = error.metadata.get('retry_delay')
+            if delay:
+                return float(delay.rstrip('s'))
+    except (ValueError, AttributeError):
+        pass
+    return None
 
 
 def process_queries(
@@ -136,9 +183,12 @@ def process_queries(
     output_path: str,
     model_name: str = "gemini-3.1-flash-lite",
     system_prompt: Optional[str] = None,
-    delay_between_calls: float = 1.0,
+    delay_between_calls: float = 4.0,
 ) -> int:
-    """Process queries and generate responses via Gemini API."""
+    """Process queries and generate responses via Gemini API.
+
+    Note: Default delay is 4.0s to respect 15 RPM limit.
+    """
     from tqdm import tqdm
 
     policies = load_policies()
@@ -237,8 +287,8 @@ def main() -> int:
     )
     parser.add_argument(
         "--delay", "-d",
-        type=float, default=1.0,
-        help="Delay between API calls (seconds)"
+        type=float, default=4.0,
+        help="Delay between API calls in seconds (default: 4.0 for 15 RPM limit)"
     )
     args = parser.parse_args()
 

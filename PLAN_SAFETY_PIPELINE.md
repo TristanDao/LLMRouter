@@ -85,24 +85,28 @@ Tạo golden dataset để train ML router cho Safety Router.
 │      (same for eng)                                              │
 │  Total: 330 queries × 3 models × 2 languages = 1,980 queries   │
 └─────────────────────────────────────────────────────────────────┘
-                                ↓
+                                 ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │     STEP 2: Response Generation (Qwen3-4B - COLAB)               │
 │  Script: scripts/run_local_generation.py                         │
-│  Model: Qwen/Qwen3-4B-Instruct-2507                              │
+│  Model: Qwen/Qwen3-4B-Instruct-2507                            │
 │  Input: ALL 6 query files (upload to Colab)                     │
+│  Note: Only TARGET policies (query.policy_ids) are passed     │
+│        to prompt - not all 12 policies                          │
 │  Output: answers_{model}_local_{lang}.jsonl                     │
-│      - answers_minimax_local_vni.jsonl                           │
+│      - answers_minimax_local_vni.jsonl                          │
 │      - answers_deepseek_local_vni.jsonl                         │
 │      - answers_qwen_local_vni.jsonl                             │
 │      (same pattern for eng)                                      │
 └─────────────────────────────────────────────────────────────────┘
-                                 ↓
+                                  ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │         STEP 3: Response Generation (Gemini - API)               │
 │  Script: scripts/run_gemini_generation.py                         │
 │  Model: gemini-3.1-flash-lite (API)                              │
 │  Input: ALL 6 query files                                       │
+│  Note: Only TARGET policies (query.policy_ids) are passed       │
+│        to prompt - not all 12 policies                            │
 │  Output: answers_{model}_gemini_{lang}.jsonl                    │
 └─────────────────────────────────────────────────────────────────┘
                                  ↓
