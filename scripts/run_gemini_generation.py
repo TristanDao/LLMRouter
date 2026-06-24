@@ -75,6 +75,7 @@ def call_gemini(
     query: str,
     model_name: str = "gemini-3.1-flash-lite",
     system_prompt: Optional[str] = None,
+    language: str = "vi",
     max_tokens: int = 1024,
     temperature: float = 0.01,
     timeout: int = 60,
@@ -90,7 +91,7 @@ def call_gemini(
 
     if system_prompt is None:
         policies = load_policies()
-        system_prompt = build_answer_prompt(query, policies, "vi")
+        system_prompt = build_answer_prompt(query, policies, language)
 
     model = genai.GenerativeModel(
         model_name=model_name,
@@ -169,6 +170,7 @@ def process_queries(
             query=query_text,
             model_name=model_name,
             system_prompt=sys_prompt,
+            language=language,
         )
 
         record = {
@@ -215,8 +217,8 @@ def main() -> int:
     )
     parser.add_argument(
         "--model-name", "-m",
-        default="gemini-3.1-flash-lite",
-        help="Gemini model name"
+        default=os.getenv("GEMINI_GENERATION_NAME", "gemini-3.1-flash-lite"),
+        help="Gemini model name (default: GEMINI_GENERATION_NAME from .env)"
     )
     parser.add_argument(
         "--system-prompt", "-s",

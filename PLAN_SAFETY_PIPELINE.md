@@ -1,7 +1,7 @@
 # Safety Router Golden Dataset Pipeline - Kế hoạch thực hiện
 
 > **Ngày tạo:** 2026-06-17
-> **Ngày cập nhật:** 2026-06-22
+> **Ngày cập nhật:** 2026-06-24
 > **Trạng thái:** Đang triển khai
 
 ---
@@ -112,6 +112,8 @@ Tạo golden dataset để train ML router cho Safety Router.
 │  Command: merge                                                  │
 │  Input: 6 response files (3 query models × 2 response models)    │
 │  Output: merged_{lang}.jsonl                                      │
+│  Note: Uses --rebase-query-id (default) to ensure each provider  │
+│        query gets unique query_id (e.g., deepseek/Q0001)          │
 └─────────────────────────────────────────────────────────────────┘
                                   ↓
 ┌─────────────────────────────────────────────────────────────────┐
@@ -322,6 +324,7 @@ Merge answers từ 6 response files (split được thực hiện ở Step 7)
 
 ```bash
 # Merge 6 answer files (3 query models × 2 response models)
+# Uses --rebase-query-id (default) to prefix query_id with provider name
 python scripts/merge_and_export.py merge \
     --inputs artifacts/safety_queries/answers_minimax_local_vni.jsonl \
             artifacts/safety_queries/answers_deepseek_local_vni.jsonl \
@@ -330,6 +333,10 @@ python scripts/merge_and_export.py merge \
             artifacts/safety_queries/answers_deepseek_gemini_vni.jsonl \
             artifacts/safety_queries/answers_qwen_gemini_vni.jsonl \
     --output artifacts/safety_queries/merged_vni.jsonl
+
+# Options
+--rebase-query-id        # Prefix query_id with provider (e.g., deepseek/Q0001) (default)
+--no-rebase-query-id     # Keep original query_id (may cause collisions)
 ```
 
 ### 6.5 judge_responses.py
@@ -418,6 +425,7 @@ for lang in vni eng; do
 done
 
 # STEP 4: Merge (combine all 6 answer files into one)
+# Uses --rebase-query-id (default) so each provider's query gets unique ID
 python scripts/merge_and_export.py merge \
   --inputs artifacts/safety_queries/answers_minimax_local_vni.jsonl \
           artifacts/safety_queries/answers_deepseek_local_vni.jsonl \
@@ -425,7 +433,8 @@ python scripts/merge_and_export.py merge \
           artifacts/safety_queries/answers_minimax_gemini_vni.jsonl \
           artifacts/safety_queries/answers_deepseek_gemini_vni.jsonl \
           artifacts/safety_queries/answers_qwen_gemini_vni.jsonl \
-  --output artifacts/safety_queries/merged_vni.jsonl
+  --output artifacts/safety_queries/merged_vni.jsonl \
+  --rebase-query-id
 
 # STEP 5: Judge (evaluate merged responses)
 python scripts/judge_responses.py --input merged_vni.jsonl --output judged_vni.jsonl --language vi
@@ -538,7 +547,9 @@ GEMINI_GENERATION_NAME=gemini-3.1-flash-lite
 
 ```json
 {
-  "query_id": "string",
+  "query_id": "string",              // Rebased: provider/query_id (e.g., "deepseek/Q0001")
+  "original_query_id": "string",      // Original query_id from source file
+  "provider": "minimax|deepseek|qwen", // Source provider
   "query": "string",
   "policy_ids": ["P01", "P02"],
   "policy_names": ["string"],
@@ -560,6 +571,9 @@ GEMINI_GENERATION_NAME=gemini-3.1-flash-lite
   }
 }
 ```
+
+**Note:** With `--rebase-query-id` (default), each provider's queries get unique IDs.
+Without it, queries with same query_id from different providers would overwrite each other.
 
 ### 11.4 `judged_vni.jsonl` (Step 5)
 

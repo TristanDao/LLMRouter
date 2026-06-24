@@ -19,18 +19,41 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
+def _extract_provider_prefix(path: str) -> str:
+    """Extract provider name from file path for query_id rebasing.
+
+    e.g., '.../answers_deepseek_local_vni.jsonl' -> 'deepseek'
+          '.../answers_qwen_gemini_vni.jsonl' -> 'qwen'
+          '.../answers_minimax_local_vni.jsonl' -> 'minimax'
+    """
+    basename = os.path.basename(path)
+    for prefix in ("deepseek", "minimax", "qwen", "gemini"):
+        if f"_{prefix}_" in basename or basename.startswith(f"answers_{prefix}"):
+            return prefix
+    return "unknown"
+
+
 def merge_responses(
     input_paths: List[str],
     output_path: str,
+    rebase_query_id: bool = True,
 ) -> int:
-    """Merge multiple response files into a single file by query_id."""
+    """Merge multiple response files into a single file by query_id.
+
+    Args:
+        input_paths: List of input JSONL files to merge.
+        output_path: Path to output merged JSONL file.
+        rebase_query_id: If True, prepend provider prefix to query_id so that
+            the same query from different providers gets separate records.
+            e.g., "q_001" from DeepSeek becomes "deepseek/q_001".
+    """
     all_records = {}
     source_models = set()
 
@@ -39,16 +62,23 @@ def merge_responses(
             print(f"Warning: {input_path} not found, skipping")
             continue
 
+        provider_prefix = _extract_provider_prefix(input_path)
+
         with open(input_path, "r", encoding="utf-8") as f:
             for line in f:
                 record = json.loads(line)
                 query_id = record.get("query_id")
                 if query_id:
-                    if query_id not in all_records:
-                        all_records[query_id] = {}
+                    if rebase_query_id:
+                        composite_id = f"{provider_prefix}/{query_id}"
+                    else:
+                        composite_id = query_id
+
+                    if composite_id not in all_records:
+                        all_records[composite_id] = {"_provider": provider_prefix}
                     model_name = record.get("model_name", "unknown")
                     source_models.add(model_name)
-                    all_records[query_id][model_name] = record
+                    all_records[composite_id][model_name] = record
 
     print(f"Loaded {len(all_records)} query_ids from {len(input_paths)} files")
     print(f"Models found: {source_models}")
@@ -57,10 +87,13 @@ def merge_responses(
     for query_id in sorted(all_records.keys()):
         records_by_model = all_records[query_id]
 
-        first_record = next(iter(records_by_model.values()))
+        actual_records = {k: v for k, v in records_by_model.items() if k != "_provider"}
+        first_record = next(iter(actual_records.values()))
 
         merged_record = {
             "query_id": query_id,
+            "original_query_id": first_record.get("query_id", ""),
+            "provider": all_records[query_id].get("_provider", "unknown"),
             "query": first_record.get("query", ""),
             "policy_ids": first_record.get("policy_ids", []),
             "policy_names": first_record.get("policy_names", []),
@@ -72,6 +105,8 @@ def merge_responses(
         }
 
         for model_name, record in records_by_model.items():
+            if model_name == "_provider":
+                continue
             merged_record["responses"][model_name] = {
                 "response": record.get("model_response", ""),
                 "response_time": record.get("response_time", 0),
@@ -211,6 +246,10 @@ def main() -> int:
     merge_parser.add_argument("--inputs", "-i", nargs="+", required=True,
                               help="Input JSONL files (can specify multiple)")
     merge_parser.add_argument("--output", "-o", required=True, help="Output merged JSONL")
+    merge_parser.add_argument("--rebase-query-id", action="store_true", default=True,
+                              help="Prepend provider prefix to query_id (default: True)")
+    merge_parser.add_argument("--no-rebase-query-id", dest="rebase_query_id", action="store_false",
+                              help="Disable query_id rebasing (keep original query_id)")
 
     export_parser = subparsers.add_parser("export", help="Export golden dataset with labels")
     export_parser.add_argument("--input", "-i", required=True, help="Merged responses JSONL")
@@ -226,7 +265,7 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.command == "merge":
-        count = merge_responses(args.inputs, args.output)
+        count = merge_responses(args.inputs, args.output, rebase_query_id=args.rebase_query_id)
         print(f"Done. Merged {count} records.")
         return 0
     elif args.command == "export":

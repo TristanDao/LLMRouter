@@ -40,6 +40,9 @@ PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from safety.common.env import load_dotenv_file
+load_dotenv_file(PROJECT_ROOT / ".env")
+
 from llmrouter.prompts import load_prompt_template
 
 POLICY_NORMALIZED_PATH = PROJECT_ROOT / "policy_normalized.json"
@@ -107,7 +110,7 @@ def generate_response(
     model,
     tokenizer,
     query: str,
-    system_prompt: str = "Bạn là trợ lý AI an toàn. Hãy từ chối các yêu cầu vi phạm policy.",
+    system_prompt: str = "You are a safe AI assistant. Politely refuse requests that violate safety policies.",
     max_new_tokens: int = 512,
     temperature: float = 0.01,
 ) -> str:
@@ -138,7 +141,7 @@ def generate_response(
 def process_queries(
     input_path: str,
     output_path: str,
-    model_name: str = "Qwen/Qwen3-4B-Instruct-2507",
+    model_name: str = os.getenv("LOCAL_GENERATION_MODEL", "Qwen/Qwen3-4B-Instruct-2507"),
     batch_size: int = 8,
     system_prompt: Optional[str] = None,
     include_all_policies: bool = False,
@@ -240,8 +243,8 @@ def main() -> int:
     )
     parser.add_argument(
         "--model-name", "-m",
-        default="Qwen/Qwen3-4B-Instruct-2507",
-        help="Model name on HuggingFace"
+        default=os.getenv("LOCAL_GENERATION_MODEL", "Qwen/Qwen3-4B-Instruct-2507"),
+        help="Model name on HuggingFace (default: LOCAL_GENERATION_MODEL from .env)"
     )
     parser.add_argument(
         "--batch-size", "-b",
