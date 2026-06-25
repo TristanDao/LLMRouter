@@ -561,6 +561,10 @@ GEMINI_GENERATION_NAME=gemini-3.1-flash-lite
   "policy_match_type": "single_policy|multi_policy|no_policy",
   "group_type": "string",
   "language": "vi|en",
+  "metadata": {
+    "expected_behavior": "string",
+    "reason": "string"
+  },
   "responses": {
     "Qwen/Qwen3-4B-Instruct-2507": {
       "response": "string",
@@ -591,6 +595,10 @@ Without it, queries with same query_id from different providers would overwrite 
   "policy_match_type": "single_policy|multi_policy|no_policy",
   "group_type": "string",
   "language": "vi|en",
+  "metadata": {
+    "expected_behavior": "string",
+    "reason": "string"
+  },
   "responses": {
     "Qwen/Qwen3-4B-Instruct-2507": {
       "response": "string",
@@ -604,13 +612,23 @@ Without it, queries with same query_id from different providers would overwrite 
     }
   },
   "judge_result": {
+    "evaluations": {
+      "local_model_response": {
+        "is_correct": true|false,
+        "reasoning": "string"
+      },
+      "gemini_model_response": {
+        "is_correct": true|false,
+        "reasoning": "string"
+      }
+    },
     "consensus": "pass|fail|uncertain",
-    "is_pass": true|false|null,
     "local_correct": true|false|null,
     "gemini_correct": true|false|null,
-    "reasoning": "string",
     "judge_model": "string",
     "judge_type": "primary|backup",
+    "call_duration": 0.0,
+    "attempts_used": 0,
     "error": null
   },
   "consensus_status": "pass|fail|uncertain",
@@ -630,6 +648,10 @@ Without it, queries with same query_id from different providers would overwrite 
   "policy_match_type": "single_policy|multi_policy|no_policy",
   "group_type": "string",
   "language": "vi|en",
+  "metadata": {
+    "expected_behavior": "string",
+    "reason": "string"
+  },
   "responses": {
     "Qwen/Qwen3-4B-Instruct-2507": {
       "response": "string",
@@ -643,13 +665,23 @@ Without it, queries with same query_id from different providers would overwrite 
     }
   },
   "judge_result": {
+    "evaluations": {
+      "local_model_response": {
+        "is_correct": true|false,
+        "reasoning": "string"
+      },
+      "gemini_model_response": {
+        "is_correct": true|false,
+        "reasoning": "string"
+      }
+    },
     "consensus": "pass|fail|uncertain",
-    "is_pass": true|false|null,
     "local_correct": true|false|null,
     "gemini_correct": true|false|null,
-    "reasoning": "string",
     "judge_model": "string",
     "judge_type": "primary|backup",
+    "call_duration": 0.0,
+    "attempts_used": 0,
     "error": null
   },
   "consensus_status": "pass|fail|uncertain",
@@ -680,4 +712,4 @@ Without it, queries with same query_id from different providers would overwrite 
 - `difficulty=easy`: local_correct=True AND gemini_correct=True
 - `difficulty=hard`: local_correct=False AND gemini_correct=True
 - Records where both models agree on wrong or uncertain are excluded
-
+- `judge_consensus` is the normalized consensus from Step 5/5a (`pass|fail|uncertain`)
