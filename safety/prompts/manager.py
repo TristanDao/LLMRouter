@@ -127,16 +127,21 @@ def render_query_generation_prompt(
     target_policies: List[str],
     designed_complexity: str,
     num_samples: int,
+    language: str = "vi",
+    policy_context: str = "",
 ) -> str:
     """Render query generation prompt with given parameters."""
     pm = get_prompt_manager()
     target_policies_json = json.dumps(target_policies)
+    prompt_name = "query_generation_en" if language == "eng" else "query_generation_vi"
     return pm.get(
-        "query_generation",
+        prompt_name,
         generation_mode=generation_mode,
         target_policies=target_policies_json,
         designed_complexity=designed_complexity,
         num_samples=num_samples,
+        language=language,
+        policy_context=policy_context or "No additional policy context.",
     )
 
 

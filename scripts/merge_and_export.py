@@ -101,6 +101,10 @@ def merge_responses(
             "policy_match_type": first_record.get("policy_match_type", ""),
             "group_type": first_record.get("group_type", ""),
             "language": first_record.get("language", "vi"),
+            "metadata": {
+                "expected_behavior": first_record.get("metadata", {}).get("expected_behavior", ""),
+                "reason": first_record.get("metadata", {}).get("reason", ""),
+            },
             "responses": {},
         }
 

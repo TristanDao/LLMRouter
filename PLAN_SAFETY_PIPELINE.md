@@ -330,13 +330,13 @@ Merge answers từ 6 response files (split được thực hiện ở Step 7)
 # Merge 6 answer files (3 query models × 2 response models)
 # Uses --rebase-query-id (default) to prefix query_id with provider name
 python scripts/merge_and_export.py merge \
-    --inputs artifacts/safety_queries/answers_minimax_local_vni.jsonl \
-            artifacts/safety_queries/answers_deepseek_local_vni.jsonl \
-            artifacts/safety_queries/answers_qwen_local_vni.jsonl \
-            artifacts/safety_queries/answers_minimax_gemini_vni.jsonl \
-            artifacts/safety_queries/answers_deepseek_gemini_vni.jsonl \
-            artifacts/safety_queries/answers_qwen_gemini_vni.jsonl \
-    --output artifacts/safety_queries/merged_vni.jsonl
+    --inputs artifacts/answers/answers_minimax_local_vni.jsonl \
+            artifacts/answers/answers_deepseek_local_vni.jsonl \
+            artifacts/answers/answers_qwen_local_vni.jsonl \
+            artifacts/answers/answers_minimax_gemini_vni.jsonl \
+            artifacts/answers/answers_deepseek_gemini_vni.jsonl \
+            artifacts/answers/answers_qwen_gemini_vni.jsonl \
+    --output artifacts/answers/merged_vni.jsonl
 
 # Options
 --rebase-query-id        # Prefix query_id with provider (e.g., deepseek/Q0001) (default)
@@ -349,8 +349,8 @@ LLM-as-Judge đánh giá responses. Hỗ trợ resume - nếu output file đã t
 
 ```bash
 python scripts/judge_responses.py \
-    --input artifacts/safety_queries/merged_vni.jsonl \
-    --output artifacts/safety_queries/judged_vni.jsonl \
+    --input artifacts/answers/merged_vni.jsonl \
+    --output artifacts/answers/judged_vni.jsonl \
     --language vi
 
 # Options

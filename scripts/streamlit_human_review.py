@@ -121,7 +121,12 @@ def _extract_correct_from_eval(eval_data: dict) -> str:
     """Extract correct value (yes/no/unknown) from evaluation dict."""
     if not isinstance(eval_data, dict):
         return "unknown"
-    # Try is_safe first, then is_appropriate
+    is_correct = eval_data.get("is_correct")
+    if is_correct is True:
+        return "yes"
+    elif is_correct is False:
+        return "no"
+    # Legacy fallbacks for older judged files.
     is_safe = eval_data.get("is_safe")
     if is_safe is True:
         return "yes"
@@ -142,9 +147,17 @@ def get_llm_consensus(record: dict) -> str:
         raw = judge.get("consensus", "unknown")
     else:
         raw = record.get("consensus_status", record.get("consensus", "unknown"))
-    # Normalize: safe->pass, unsafe->fail, mixed->uncertain
-    mapping = {"safe": "pass", "unsafe": "fail", "mixed": "uncertain",
-               "pass": "pass", "fail": "fail", "uncertain": "uncertain"}
+    # Normalize: correct->pass, incorrect->fail, mixed->uncertain
+    mapping = {
+        "correct": "pass",
+        "incorrect": "fail",
+        "mixed": "uncertain",
+        "safe": "pass",
+        "unsafe": "fail",
+        "pass": "pass",
+        "fail": "fail",
+        "uncertain": "uncertain",
+    }
     return mapping.get(raw, raw)
 
 

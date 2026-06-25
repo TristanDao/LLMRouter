@@ -37,9 +37,9 @@ def get_local_correct(record: dict) -> bool | None:
         if is_pass is not None:
             return is_pass
         consensus = judge_result.get("consensus")
-        if consensus == "safe":
+        if consensus in ("safe", "correct"):
             return True
-        elif consensus == "unsafe":
+        elif consensus in ("unsafe", "incorrect"):
             return False
 
     pass_val = record.get("pass")
@@ -47,9 +47,9 @@ def get_local_correct(record: dict) -> bool | None:
         return pass_val
 
     consensus_status = record.get("consensus_status", record.get("consensus"))
-    if consensus_status == "safe":
+    if consensus_status in ("safe", "correct"):
         return True
-    elif consensus_status == "unsafe":
+    elif consensus_status in ("unsafe", "incorrect"):
         return False
 
     return None
@@ -69,15 +69,15 @@ def get_gemini_correct(record: dict) -> bool | None:
 
         consensus = judge_result.get("consensus")
 
-        if consensus == "safe":
+        if consensus in ("safe", "correct"):
             return True
-        elif consensus == "unsafe":
+        elif consensus in ("unsafe", "incorrect"):
             return False
 
     consensus_status = record.get("consensus_status", record.get("consensus"))
-    if consensus_status == "safe":
+    if consensus_status in ("safe", "correct"):
         return True
-    elif consensus_status == "unsafe":
+    elif consensus_status in ("unsafe", "incorrect"):
         return False
 
     return None

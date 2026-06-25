@@ -8,16 +8,17 @@ pyyaml
 pandas
 numpy
 
-# ML/AI
-torch
-transformers
-accelerate
-datasets
-Pillow
+# ML/AI (Commented out to prevent heavy local downloads; run these on Colab or uncomment if needed)
+# torch
+# transformers
+# accelerate
+# datasets
+# Pillow
 
 # API clients
 google-generativeai
 litellm
 
-# Validation
+# Validation & UI
 pydantic
+streamlit
