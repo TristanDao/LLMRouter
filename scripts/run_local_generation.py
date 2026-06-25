@@ -71,8 +71,8 @@ def build_all_policies_text(policies: List[Dict], policy_ids: List[str] = None) 
     """
     policy_parts = []
     for p in policies:
-        if policy_ids is None or str(p['policy_id']) in [str(pid) for pid in policy_ids]:
-            policy_parts.append(f"- [{p['policy_id']}] {p['policy_name']}: {p['definition']}")
+        if policy_ids is None or str(p.policy_id) in [str(pid) for pid in policy_ids]:
+            policy_parts.append(f"- [{p.policy_id}] {p.policy_name}: {p.definition}")
     return "\n".join(policy_parts)
 
 
