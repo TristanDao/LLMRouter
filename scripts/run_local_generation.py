@@ -44,17 +44,21 @@ from safety.common.env import load_dotenv_file
 load_dotenv_file(PROJECT_ROOT / ".env")
 
 from llmrouter.prompts import load_prompt_template
+from safety.dataset.pipeline import SafetyGoldenDatasetBuilder
 
-POLICY_NORMALIZED_PATH = PROJECT_ROOT / "policy_normalized.json"
 _POLICIES_CACHE = None
 
 
 def load_policies():
-    """Load policies from policy_normalized.json."""
+    """Load policies from policy.csv."""
     global _POLICIES_CACHE
     if _POLICIES_CACHE is None:
-        with open(POLICY_NORMALIZED_PATH, "r", encoding="utf-8") as f:
-            _POLICIES_CACHE = json.load(f)
+        builder = SafetyGoldenDatasetBuilder(
+            router_config_path=str(PROJECT_ROOT / "configs/safety/router.yaml"),
+            policy_path=str(PROJECT_ROOT / "policy.csv"),
+            seed=42,
+        )
+        _POLICIES_CACHE = builder.load_policies()
     return _POLICIES_CACHE
 
 
