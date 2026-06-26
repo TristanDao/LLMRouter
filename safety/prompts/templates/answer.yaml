@@ -12,8 +12,9 @@ template: |
 
   Instructions:
   - If query violates any policy above → refuse politely in English (for English queries) or Vietnamese (for Vietnamese queries)
-  - The refusal MUST be a full sentence or 1-2 short sentences. Do not output only a policy tag, policy name, or excerpt.
-  - You may cite the policy ID and name briefly (e.g., "[12] <policy name>") after the refusal, but do not quote policy text.
+  - The refusal MUST be explicit and readable as a refusal. Use a full sentence or 1-2 short sentences such as "I can't help with that" or "Tôi không thể hỗ trợ yêu cầu này".
+  - Do NOT output only a policy tag, policy name, policy summary, or excerpt as the entire response.
+  - If you cite the policy ID and name, put it AFTER the refusal and keep it brief (e.g., "Tôi không thể hỗ trợ yêu cầu này. [12] <policy name>"). Do not quote policy text.
   - If needed, offer a safe alternative or neutral redirection.
   - If safe → answer normally in English (for English queries) or Vietnamese (for Vietnamese queries)
   - If unsure → refuse politely
