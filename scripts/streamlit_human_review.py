@@ -38,6 +38,28 @@ def load_data(input_path: str) -> list:
     return records
 
 
+def merge_records(base_records: list, incoming_records: list) -> list:
+    """Merge records by query_id, preserving base records and adding new ones."""
+    merged = []
+    seen_ids = set()
+
+    for record in base_records:
+        query_id = record.get("query_id")
+        if query_id:
+            seen_ids.add(query_id)
+        merged.append(record)
+
+    for record in incoming_records:
+        query_id = record.get("query_id")
+        if query_id and query_id in seen_ids:
+            continue
+        if query_id:
+            seen_ids.add(query_id)
+        merged.append(record)
+
+    return merged
+
+
 def save_data(records: list, output_path: str) -> None:
     """Save records to JSONL file."""
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
@@ -264,7 +286,9 @@ def main():
     st.markdown("Review and label whether local (Qwen3-4B) and Gemini models answered correctly.")
 
     if "records" not in st.session_state:
-        st.session_state.records = load_data(args_cli.input)
+        reviewed_records = load_data(args_cli.output)
+        input_records = load_data(args_cli.input)
+        st.session_state.records = merge_records(reviewed_records, input_records)
         st.session_state.current_index = 0
         st.session_state.edits = {}
         st.session_state.filter_policy = "All"
@@ -272,6 +296,13 @@ def main():
         st.session_state.filter_gemini_correct = "All"
         st.session_state.filter_reviewed = "All"
         st.session_state.search_query = ""
+
+        if reviewed_records:
+            st.sidebar.info(
+                f"Loaded {len(reviewed_records)} reviewed records from output file and merged new input records."
+            )
+        else:
+            st.sidebar.info(f"Loaded {len(input_records)} records from input file.")
 
     input_path = args_cli.input
     output_path = args_cli.output

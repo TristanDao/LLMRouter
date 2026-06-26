@@ -1,7 +1,7 @@
 # Safety Router Golden Dataset Pipeline - Kế hoạch thực hiện
 
 > **Ngày tạo:** 2026-06-17
-> **Ngày cập nhật:** 2026-06-25
+> **Ngày cập nhật:** 2026-06-26
 > **Trạng thái:** Đang triển khai
 
 ---
@@ -14,6 +14,7 @@
 5. [API Configuration](#5-api-configuration)
 6. [Scripts](#6-scripts)
 7. [Usage](#7-usage)
+8. [Synthetic Hard Augmentation](#8-synthetic-hard-augmentation)
 
 ---
 
@@ -60,7 +61,8 @@ Tạo golden dataset để train ML router cho Safety Router.
 | 5 | LLM-as-Judge (Step 5) | Trung | ENG + VNI judges |
 | 5a | Human Review (Step 5a) | Cao | Review TẤT CẢ cases, edit nếu cần |
 | 6 | Determine Easy/Hard (Step 6) | Cao | easy=both correct, hard=local wrong gemini right |
-| 7 | Export + Split (Step 7) | Trung | golden_dataset + train/dev/test |
+| 7 | Synthetic Hard Augmentation (Step 6b) | Cao | Sinh thêm hard samples từ pattern hard cases |
+| 8 | Export + Split (Step 7) | Trung | golden_dataset + train/dev/test |
 
 ---
 
@@ -144,6 +146,16 @@ Tạo golden dataset để train ML router cho Safety Router.
 │      hard: local_wrong AND gemini_correct                          │
 │  Note: Both wrong = excluded (not useful for training)            │
 │  Output: Adds "difficulty" field (easy/hard)                      │
+└─────────────────────────────────────────────────────────────────┘
+                                  ↓
+┌─────────────────────────────────────────────────────────────────┐
+│          STEP 6b: Synthetic Hard Augmentation                     │
+│  Script: scripts/synthetic_hard_augmentation.py                  │
+│  Input: golden_dataset_{lang}.jsonl                               │
+│  Source pattern: hard samples + selected easy seeds               │
+│  Output: golden_dataset_augmented_{lang}.jsonl                    │
+│  Note: Generate harder queries on local machine via Alibaba API   │
+│        using `ALIBABA_SYN_DATA_DEEPSEEK` from `.env`              │
 └─────────────────────────────────────────────────────────────────┘
                                   ↓
 ┌─────────────────────────────────────────────────────────────────┐
@@ -390,6 +402,26 @@ python scripts/determine_difficulty.py \
 #   (Both wrong = excluded from dataset)
 ```
 
+### 6.8 synthetic_hard_augmentation.py
+
+Script này giờ ghi incremental ra file, nên chạy được an toàn trên Colab và có thể resume.
+
+```bash
+# Tạo thêm hard samples và ghi dần từng dòng ra output
+python scripts/synthetic_hard_augmentation.py \
+  --input artifacts/safety_queries/golden_dataset_vni.jsonl \
+  --output artifacts/safety_queries/golden_dataset_augmented_vni.jsonl \
+  --ratio 0.5 \
+  --resume
+
+# Nếu muốn tạo lại từ đầu, tắt resume
+python scripts/synthetic_hard_augmentation.py \
+  --input artifacts/safety_queries/golden_dataset_vni.jsonl \
+  --output artifacts/safety_queries/golden_dataset_augmented_vni.jsonl \
+  --ratio 0.5 \
+  --no-resume
+```
+
 ---
 
 ## 7. Usage
@@ -453,9 +485,15 @@ python scripts/determine_difficulty.py \
     --input artifacts/safety_queries/reviewed_vni.jsonl \
     --output artifacts/safety_queries/golden_dataset_vni.jsonl
 
+# STEP 6b: Synthetic hard augmentation (optional)
+python scripts/synthetic_hard_augmentation.py \
+  --input artifacts/safety_queries/golden_dataset_vni.jsonl \
+  --output artifacts/safety_queries/golden_dataset_augmented_vni.jsonl \
+  --ratio 0.5
+
 # STEP 7: Split train/dev/test
 python scripts/merge_and_export.py split \
-    --input artifacts/safety_queries/golden_dataset_vni.jsonl \
+    --input artifacts/safety_queries/golden_dataset_augmented_vni.jsonl \
     --output-dir artifacts/safety_queries/splits_vni \
     --train-ratio 0.7 \
     --dev-ratio 0.15 \
@@ -486,6 +524,7 @@ python scripts/merge_and_export.py split \
 | `scripts/judge_responses.py` | LLM-as-Judge |
 | `scripts/streamlit_human_review.py` | Human review UI (Streamlit) |
 | `scripts/determine_difficulty.py` | Auto determine easy/hard |
+| `scripts/synthetic_hard_augmentation.py` | Synthetic hard query augmentation |
 | `scripts/merge_and_export.py` | Merge + Split only (export via determine_difficulty.py) |
 
 ## 10. Model Configuration (.env)
@@ -695,7 +734,7 @@ Without it, queries with same query_id from different providers would overwrite 
 ```json
 {
   "query_id": "string",
-  "user_prompt": "string",
+  "query": "string",
   "policy_ids": ["P01", "P02"],
   "designed_complexity": "low|medium|high",
   "group_type": "string",

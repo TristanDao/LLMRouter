@@ -37,6 +37,19 @@ try:  # pragma: no cover
 except Exception:  # pragma: no cover
     call_api = None
 
+try:  # pragma: no cover
+    from .data_loader import load_csv, load_jsonl, jsonl_to_csv, load_pt
+except Exception:  # pragma: no cover
+    load_csv = None
+    load_jsonl = None
+    jsonl_to_csv = None
+    load_pt = None
+
+try:  # pragma: no cover
+    from .setup import setup_environment
+except Exception:  # pragma: no cover
+    setup_environment = None
+
 from .constants import TASK_DESCRIPTIONS, TASK_CATEGORIES, API_KEYS, HF_TOKEN, CASE_NUM
 
 __all__ = [
@@ -52,6 +65,11 @@ __all__ = [
     "PROMPT_REGISTRY",
     "TASK_METRIC_REGISTRY",
     "call_api",
+    "load_csv",
+    "load_jsonl",
+    "jsonl_to_csv",
+    "load_pt",
+    "setup_environment",
     "TASK_DESCRIPTIONS",
     "TASK_CATEGORIES",
     "API_KEYS",

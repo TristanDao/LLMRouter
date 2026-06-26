@@ -102,6 +102,22 @@ llmrouter train --router mfrouter --config configs/model_config_train/mfrouter.y
 llmrouter train --router mfrouter --config configs/model_config_train/mfrouter.yaml --quiet
 ```
 
+### Colab Notebook
+
+If your local machine is weak, run MFRouter on Colab after cloning the repo:
+
+```bash
+!git clone <REPO_URL>
+%cd LLMRouter
+```
+
+Open these notebooks:
+
+- `notebooks/mfrouter/01_mfrouter_training.ipynb`
+- `notebooks/mfrouter/02_mfrouter_inference.ipynb`
+
+The notebooks are the recommended entrypoint for training and inference on custom datasets.
+
 ### Inference
 
 ```bash
@@ -194,6 +210,17 @@ metric:
     performance: 1
     cost: 0
 ```
+
+## Vietnamese Custom Task Notes
+
+For a Vietnamese custom task, you still need to prepare two things before MFRouter can train:
+
+1. `routing_data_train` / `routing_data_test` in the pairwise format expected by MFRouter.
+2. Precomputed `query_embedding_data` for your Vietnamese queries.
+
+MFRouter learns the latent model embeddings during training, so you do **not** need a prebuilt model embedding file.
+
+If you want the least code change, keep the router logic as-is and only swap the data preparation pipeline.
 
 ## Advantages
 
