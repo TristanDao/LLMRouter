@@ -2,7 +2,7 @@
 
 > **Ngày tạo:** 2026-06-17
 > **Ngày cập nhật:** 2026-06-29
-> **Trạng thái:** Step 8 done (Phase 1+2), Step 9 (train) ready on Colab
+> **Trạng thái:** Tuần 1-6 ✅ Done · Tuần 7-10 🔄 Plan + Initial Setup
 
 ---
 
@@ -19,6 +19,7 @@
 10. [Model Configuration](#10-model-configuration)
 11. [Data Format](#11-data-format-json-fields)
 12. [Colab Workflow](#12-colab-workflow-step-8--10)
+13. [Tuần 7-10: Baseline + Optimization + Delivery](#13-tuần-7-10-baseline--optimization--delivery)
 
 ---
 
@@ -1098,3 +1099,149 @@ files.download("saved_models/mfrouter/mfrouter_vni.pkl")
 - **Mỗi Colab session ~12h** — nếu training lâu, lưu checkpoint lên Drive định kỳ
 - **Embedding model phải khớp** giữa training và test (cùng `BAAI/bge-m3` 1024-dim)
 - Nếu dùng LLM embedding API (Alibaba) thay vì local, dùng `--mode api` ở Phase 2
+
+---
+
+## 13. Tuần 7-10: Baseline + Optimization + Delivery
+
+> **Giai đoạn 2** của dự án — bổ sung baseline classifiers, uncertainty estimation, benchmark, tối ưu và bàn giao.
+
+### 13.1 Tuần 7: Baseline training/inference pipeline
+
+**Mục tiêu:** Xây dựng pipeline transformers chuẩn cho 2 task classifiers.
+
+**Task 1 — Violation classifier (multi-label, 12 policies):**
+```bash
+python scripts/train_violation_classifier.py \
+    --input artifacts/golden/splits_vni/train.jsonl \
+    --output saved_models/classifiers/violation_classifier \
+    --model-name xlm-roberta-base \
+    --epochs 5 \
+    --batch-size 32
+```
+
+**Task 2 — Difficulty classifier (binary, easy/hard):**
+```bash
+python scripts/train_difficulty_classifier.py \
+    --input artifacts/golden/splits_vni/train.jsonl \
+    --output saved_models/classifiers/difficulty_classifier \
+    --model-name xlm-roberta-base \
+    --epochs 5 \
+    --batch-size 32
+```
+
+**Inference + uncertainty:**
+```bash
+python scripts/predict_violation.py \
+    --model-path saved_models/classifiers/violation_classifier \
+    --text "Câu query cần classify" \
+    --return-uncertainty
+```
+
+**Output:**
+- `saved_models/classifiers/violation_classifier/` (HuggingFace format)
+- `saved_models/classifiers/difficulty_classifier/`
+- Target: accuracy >= 0.85 trên test set
+
+### 13.2 Tuần 8: Uncertainty estimation + calibration
+
+**Mục tiêu:** Implement uncertainty metrics cho classifiers.
+
+**Entropy, MC-dropout, Temperature scaling:**
+```bash
+python scripts/compute_uncertainty.py \
+    --model-path saved_models/classifiers/violation_classifier \
+    --input artifacts/golden/splits_vni/test.jsonl \
+    --method mc_dropout \
+    --n-samples 20 \
+    --output artifacts/calibration/uncertainty_scores.json
+
+python scripts/compute_uncertainty.py \
+    --model-path saved_models/classifiers/violation_classifier \
+    --input artifacts/golden/splits_vni/test.jsonl \
+    --method temperature_scaling \
+    --output artifacts/calibration/temperature.json
+```
+
+**Output:**
+- `artifacts/calibration/uncertainty_scores.json` — entropy/MC-dropout per query
+- `artifacts/calibration/ece_mce_report.json` — Expected/Maximum Calibration Error
+- `artifacts/calibration/reliability_diagram.png` — visualization
+- Target: ECE <= 0.1
+
+### 13.3 Tuần 9: Benchmark + Error analysis
+
+**Mục tiêu:** So sánh 4 approaches trên test set.
+
+```bash
+python scripts/benchmark_approaches.py \
+    --test-data artifacts/golden/splits_vni/test.jsonl \
+    --mfrouter-path saved_models/mfrouter/mfrouter_vni.pkl \
+    --classifier-path saved_models/classifiers/difficulty_classifier \
+    --output artifacts/benchmarks/
+```
+
+**4 approaches:**
+1. **MFRouter** (trained, Tuần 6)
+2. **Difficulty classifier** (transformer baseline, Tuần 7)
+3. **Rule-based** (always local if confident else gemini)
+4. **Always local** (cheapest baseline)
+
+**Metrics:** accuracy, F1, latency, cost-per-query
+
+**Output:**
+- `artifacts/benchmarks/comparison_report.md`
+- `artifacts/benchmarks/error_analysis.md`
+- `artifacts/benchmarks/confusion_matrix.png`
+- `artifacts/benchmarks/cost_per_query.csv`
+
+### 13.4 Tuần 10: Optimize + Delivery
+
+**Mục tiêu:** Tối ưu MFRouter + viết final documentation.
+
+**Optimization:**
+```bash
+# Quantize MFRouter sang FP16
+python scripts/quantize_mfrouter.py \
+    --input saved_models/mfrouter/mfrouter_vni.pkl \
+    --output saved_models/mfrouter/mfrouter_vni_fp16.pkl \
+    --dtype fp16
+
+# Benchmark lại sau quantize
+python scripts/benchmark_approaches.py \
+    --mfrouter-path saved_models/mfrouter/mfrouter_vni_fp16.pkl
+```
+
+**Final delivery docs:**
+- `DELIVERY.md` — Tổng quan bàn giao (code, weights, dataset, docs)
+- `MODEL_CARD.md` — Model card cho MFRouter + classifiers
+- `INFERENCE_GUIDE.md` — Hướng dẫn tích hợp vào production
+
+### 13.5 Scripts cần tạo (Tuần 7-10)
+
+| Script | Mô tả | Tuần |
+|--------|-------|------|
+| `scripts/train_violation_classifier.py` | Train multi-label classifier (12 policies) | 7 |
+| `scripts/train_difficulty_classifier.py` | Train binary classifier (easy/hard) | 7 |
+| `scripts/predict_violation.py` | Inference + uncertainty cho classifiers | 7-8 |
+| `scripts/compute_uncertainty.py` | Entropy, MC-dropout, temperature scaling | 8 |
+| `scripts/benchmark_approaches.py` | So sánh 4 approaches trên test set | 9 |
+| `scripts/quantize_mfrouter.py` | FP16/INT8 quantization cho MFRouter | 10 |
+
+### 13.6 Models mới (Tuần 7-10)
+
+| Model | Path | Pretrained | Size |
+|-------|------|------------|------|
+| Violation classifier | `saved_models/classifiers/violation_classifier/` | xlm-roberta-base | ~560MB |
+| Difficulty classifier | `saved_models/classifiers/difficulty_classifier/` | xlm-roberta-base | ~560MB |
+| MFRouter FP16 | `saved_models/mfrouter/mfrouter_vni_fp16.pkl` | — | ~0.75MB |
+| MFRouter INT8 | `saved_models/mfrouter/mfrouter_vni_int8.pkl` | — | ~0.4MB |
+
+### 13.7 Timeline 4 tuần
+
+| Tuần | Nhiệm vụ chính | Deliverable |
+|------|-----------------|-------------|
+| 7 | Train baseline classifiers (2 tasks) | 2 model checkpoints + scripts |
+| 8 | Uncertainty estimation + calibration | ECE/MCE report, reliability diagram |
+| 9 | Benchmark + error analysis | comparison_report.md, error_analysis.md |
+| 10 | Optimize + delivery | DELIVERY.md, MODEL_CARD.md, INFERENCE_GUIDE.md |
