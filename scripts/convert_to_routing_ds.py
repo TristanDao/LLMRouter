@@ -475,11 +475,16 @@ def main() -> int:
                         help="Phase 1 only: convert JSONL, skip embedding generation")
     parser.add_argument("--embeddings-only", action="store_true",
                         help="Phase 2 only: generate embeddings from existing text file")
+    parser.add_argument("--backfill-only", action="store_true",
+                        help="Only backfill embedding_id into routing files (assumes .pt and text file exist)")
     parser.add_argument("--embedding-model", default="",
                         help="Embedding model name (HF model for local, Alibaba model for api)")
     parser.add_argument("--mode", choices=["api", "local"], default="local",
                         help="Embedding mode: 'local' (HF model on GPU) or 'api' (Alibaba)")
     args = parser.parse_args()
+
+    if args.backfill_only:
+        return backfill_only(args.output_dir)
 
     if args.embeddings_only:
         return run_embeddings_only(args.output_dir, mode=args.mode, model_name=args.embedding_model)
@@ -491,6 +496,52 @@ def main() -> int:
 
     if not args.skip_embeddings:
         return run_embeddings_only(args.output_dir, mode=args.mode, model_name=args.embedding_model)
+
+    return 0
+
+
+def backfill_only(output_dir: str) -> int:
+    """Backfill embedding_id from existing unique_query_texts.txt."""
+    texts_path = os.path.join(output_dir, _QUERY_TEXTS_FILE)
+    if not os.path.exists(texts_path):
+        print(f"ERROR: {texts_path} not found.")
+        return 1
+
+    query_texts = read_lines(texts_path)
+    print(f"Read {len(query_texts)} unique query texts from {texts_path}")
+
+    splits = ["train", "test", "dev"]
+    for split in splits:
+        routing_path = os.path.join(output_dir, f"routing_data_{split}.jsonl")
+        if not os.path.exists(routing_path):
+            continue
+        routing = read_jsonl(routing_path)
+        query_to_eid = {text: eid for eid, text in enumerate(query_texts)}
+        n = 0
+        for row in routing:
+            qt = row.get("query", "")
+            eid = query_to_eid.get(qt, -1)
+            if eid >= 0:
+                row["embedding_id"] = eid
+                n += 1
+        write_jsonl(routing_path, routing)
+        print(f"  Backfilled {n}/{len(routing)} rows in {routing_path}")
+
+    for split in splits:
+        query_path = os.path.join(output_dir, f"query_data_{split}.jsonl")
+        if not os.path.exists(query_path):
+            continue
+        queries = read_jsonl(query_path)
+        query_to_eid = {text: eid for eid, text in enumerate(query_texts)}
+        n = 0
+        for q in queries:
+            qt = q.get("query", "")
+            eid = query_to_eid.get(qt, -1)
+            if eid >= 0:
+                q["embedding_id"] = eid
+                n += 1
+        write_jsonl(query_path, queries)
+        print(f"  Updated {n}/{len(queries)} rows in {query_path}")
 
     return 0
 
