@@ -31,11 +31,31 @@ from llmrouter.models.mfrouter.trainer import MFRouterTrainer
 
 def patch_init_for_broken_imports() -> None:
     """Wrap broken imports so they don't break MFRouter load."""
-    import llmrouter.models as m
-    if m.SmallestLLM is None and m.LargestLLM is None:
+    utils_init = PROJECT_ROOT / "llmrouter" / "utils" / "__init__.py"
+    if utils_init.exists():
+        content = utils_init.read_text()
+        if "load_model" not in content and "save_model" not in content:
+            content = content.replace(
+                "from .setup import setup_environment",
+                "try:\n    from .model_loader import save_model, load_model\n"
+                "except Exception:\n    save_model = None\n    load_model = None\n\n"
+                "try:\n    from .evaluation import calculate_task_performance\n"
+                "except Exception:\n    calculate_task_performance = None\n\n"
+                "try:\n    from .embeddings import get_longformer_embedding\n"
+                "except Exception:\n    get_longformer_embedding = None\n\n"
+                "from .setup import setup_environment",
+            )
+            content = content.replace(
+                '"load_pt",\n    "setup_environment",',
+                '"load_pt",\n    "get_longformer_embedding",\n    "load_model",\n    "save_model",\n    "calculate_task_performance",\n    "setup_environment",',
+            )
+            utils_init.write_text(content)
+            print(f"  Patched {utils_init.name} to export load_model, save_model, calculate_task_performance, get_longformer_embedding")
+
+    models_init = PROJECT_ROOT / "llmrouter" / "models" / "__init__.py"
+    if not models_init.exists():
         return
-    init_path = PROJECT_ROOT / "llmrouter" / "models" / "__init__.py"
-    content = init_path.read_text()
+    content = models_init.read_text()
     old = "from .smallest_llm import SmallestLLM\nfrom .largest_llm import LargestLLM\n"
     if old not in content:
         return
@@ -45,8 +65,8 @@ def patch_init_for_broken_imports() -> None:
         "try:\n    from .largest_llm import LargestLLM\n"
         "except Exception:\n    LargestLLM = None\n"
     )
-    init_path.write_text(content.replace(old, new))
-    print(f"  Patched {init_path.name} for broken smallest_llm import")
+    models_init.write_text(content.replace(old, new))
+    print(f"  Patched {models_init.name} for broken smallest_llm import")
 
 
 def evaluate_on_test(

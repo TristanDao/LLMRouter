@@ -46,6 +46,22 @@ except Exception:  # pragma: no cover
     load_pt = None
 
 try:  # pragma: no cover
+    from .model_loader import save_model, load_model
+except Exception:  # pragma: no cover
+    save_model = None
+    load_model = None
+
+try:  # pragma: no cover
+    from .evaluation import calculate_task_performance
+except Exception:  # pragma: no cover
+    calculate_task_performance = None
+
+try:  # pragma: no cover
+    from .embeddings import get_longformer_embedding
+except Exception:  # pragma: no cover
+    get_longformer_embedding = None
+
+try:  # pragma: no cover
     from .setup import setup_environment
 except Exception:  # pragma: no cover
     setup_environment = None
@@ -69,6 +85,10 @@ __all__ = [
     "load_jsonl",
     "jsonl_to_csv",
     "load_pt",
+    "get_longformer_embedding",
+    "load_model",
+    "save_model",
+    "calculate_task_performance",
     "setup_environment",
     "TASK_DESCRIPTIONS",
     "TASK_CATEGORIES",
