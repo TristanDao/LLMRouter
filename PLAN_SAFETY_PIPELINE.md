@@ -1,8 +1,8 @@
 # Safety Router Golden Dataset Pipeline - Kế hoạch thực hiện
 
 > **Ngày tạo:** 2026-06-17
-> **Ngày cập nhật:** 2026-06-26
-> **Trạng thái:** Đang triển khai
+> **Ngày cập nhật:** 2026-06-29
+> **Trạng thái:** Step 8 - Phase 1 done, chờ Phase 2 trên Colab
 
 ---
 
@@ -14,7 +14,10 @@
 5. [API Configuration](#5-api-configuration)
 6. [Scripts](#6-scripts)
 7. [Usage](#7-usage)
-8. [Synthetic Hard Augmentation](#8-synthetic-hard-augmentation)
+8. [Ghi chú quan trọng](#8-ghi-chú-quan-trọng)
+9. [Files](#9-files)
+10. [Model Configuration](#10-model-configuration)
+11. [Data Format](#11-data-format-json-fields)
 
 ---
 
@@ -49,20 +52,17 @@ Tạo golden dataset để train ML router cho Safety Router.
 | Alibaba API | ✅ Hoạt động | Backup only |
 | Pipeline cleanup | ✅ Hoàn thành | Đã xóa template-based, giữ LLM-based |
 | Separate scripts | ✅ Hoàn thành | 6 scripts riêng biệt |
+| Steps 1-7 (VNI only) | ✅ Hoàn thành | Queries → responses → judge → review → difficulty → augmentation → split |
+| Phase 1: Convert to routing format | ✅ Hoàn thành | 874 queries, 1,748 routing rows, `--skip-embeddings` |
+| llm_data.json + mfrouter.yaml | ✅ Hoàn thành | Config trỏ artifacts/routing/, text_dim=1024 |
 
 ### 🔴 Cần làm
 
 | # | Task | Priority | Ghi chú |
 |---|------|----------|---------|
-| 1 | Chạy query generation (3 models × 2 languages) | Cao | 1,980 queries output |
-| 2 | Chạy Qwen3-4B trên Colab (all 6 query files) | Cao | HF Transformers + GPU |
-| 3 | Chạy Gemini API (all 6 query files) | Cao | Gọi trực tiếp từ local |
-| 4 | Merge responses (Step 4) | Trung | Merge 6 files thành merged.jsonl |
-| 5 | LLM-as-Judge (Step 5) | Trung | ENG + VNI judges |
-| 5a | Human Review (Step 5a) | Cao | Review TẤT CẢ cases, edit nếu cần |
-| 6 | Determine Easy/Hard (Step 6) | Cao | easy=both correct, hard=local wrong gemini right |
-| 7 | Synthetic Hard Augmentation (Step 6b) | Cao | Sinh thêm hard samples từ pattern hard cases |
-| 8 | Export + Split (Step 7) | Trung | golden_dataset + train/dev/test |
+| 9 | Phase 2: Generate embeddings (Colab) | Cao | Alibaba text-embedding-v3, 874 queries |
+| 10 | Train MFRouter (Colab) | Cao | Notebook/Colab |
+| 11 | Evaluate MFRouter | Trung | Test accuracy, confusion matrix |
 
 ---
 
@@ -166,6 +166,39 @@ Tạo golden dataset để train ML router cho Safety Router.
 │      - golden_dataset_vni.jsonl (with difficulty label)           │
 │      - golden_dataset_eng.jsonl (with difficulty label)           │
 └─────────────────────────────────────────────────────────────────┘
+                                 ↓
+┌─────────────────────────────────────────────────────────────────┐
+│     STEP 8: Convert to MFRouter Routing Format                    │
+│  Script: scripts/convert_to_routing_ds.py                         │
+│  Phase 1 (LOCAL - no torch):                                      │
+│    --skip-embeddings → JSONL + unique_query_texts.txt            │
+│  Phase 2 (COLAB - torch + httpx):                                 │
+│    --embeddings-only → gọi Alibaba text-embedding-v3             │
+│  Input: artifacts/golden/splits_vni/{train,test,dev}.jsonl       │
+│  Embedding: Alibaba text-embedding-v3 (1024-dim)                 │
+│  Logic:                                                           │
+│      difficulty=easy → local=1.0, gemini=1.0                      │
+│      difficulty=hard → local=0.0, gemini=1.0                      │
+│  Output:                                                          │
+│      - artifacts/routing/routing_data_{train,test,dev}.jsonl     │
+│      - artifacts/routing/query_data_{train,test,dev}.jsonl       │
+│      - artifacts/routing/query_embeddings.pt                     │
+│      - artifacts/routing/unique_query_texts.txt                  │
+└─────────────────────────────────────────────────────────────────┘
+                                 ↓
+┌─────────────────────────────────────────────────────────────────┐
+│                 STEP 9: Train MFRouter                             │
+│  Notebook: notebooks/mfrouter/01_mfrouter_training.ipynb          │
+│  Config: configs/model_config_train/mfrouter.yaml                │
+│  Model: Matrix Factorization Router (latent_dim=128)              │
+│  Output: saved_models/mfrouter/mfrouter_vni.pkl                   │
+└─────────────────────────────────────────────────────────────────┘
+                                 ↓
+┌─────────────────────────────────────────────────────────────────┐
+│               STEP 10: Evaluate MFRouter                           │
+│  Notebook: notebooks/mfrouter/02_mfrouter_inference.ipynb         │
+│  Metrics: Top-1 accuracy, per-policy routing table                │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -227,6 +260,21 @@ LLMRouter/
         ├── reviewed_eng.jsonl
         # STEP 6: After determine_difficulty (golden dataset with difficulty label)
         └── golden_dataset_*.jsonl
+
+    └── routing/
+        # STEP 8: MFRouter routing format
+        ├── routing_data_train.jsonl
+        ├── routing_data_test.jsonl
+        ├── routing_data_dev.jsonl
+        ├── query_data_train.jsonl
+        ├── query_data_test.jsonl
+        ├── query_data_dev.jsonl
+        ├── query_embeddings.pt          # Alibaba text-embedding-v3 (1024-dim)
+        └── llm_data.json                # LLM candidates (local + gemini)
+
+saved_models/
+    └── mfrouter/
+        └── mfrouter_vni.pkl             # Trained MFRouter model
 ```
 
 ---
@@ -422,6 +470,68 @@ python scripts/synthetic_hard_augmentation.py \
   --no-resume
 ```
 
+### 6.9 convert_to_routing_ds.py
+
+Convert golden dataset splits sang MFRouter routing format. **2 phase:**
+
+**Phase 1 (local — không cần torch/GPU):**
+```bash
+python scripts/convert_to_routing_ds.py \
+    --input-dir artifacts/golden/splits_vni \
+    --output-dir artifacts/routing \
+    --skip-embeddings
+
+# Output Phase 1:
+#   artifacts/routing/routing_data_{train,test,dev}.jsonl   (embedding_id=-1)
+#   artifacts/routing/query_data_{train,test,dev}.jsonl
+#   artifacts/routing/unique_query_texts.txt                 (874 dòng → input cho Phase 2)
+```
+
+**Phase 2 (Colab — cần torch + httpx):**
+```bash
+# Trên Colab sau khi clone repo:
+# !pip install torch httpx
+# Đảm bảo .env có ALIBABA_URL, ALIBABA_API_KEY, ALIBABA_EMBEDDING
+
+!python scripts/convert_to_routing_ds.py \
+    --output-dir artifacts/routing \
+    --embeddings-only
+
+# Output Phase 2:
+#   artifacts/routing/query_embeddings.pt          (1024-dim, 874 vectors)
+#   Backfill embedding_id vào routing_data JSONL
+#   Backfill embedding_id vào query_data JSONL
+```
+
+**Performance mapping:**
+```
+  difficulty=easy  → local=1.0, gemini=1.0  (both correct)
+  difficulty=hard  → local=0.0, gemini=1.0  (local wrong, gemini right)
+```
+
+**Filtering:**
+```
+  - Bỏ records có judge_consensus="fail"
+  - Bỏ records không có difficulty
+  - Giữ "uncertain" nếu difficulty xác định được
+```
+
+### 6.10 MFRouter Training (STEP 9)
+
+Sau khi có routing data, train MFRouter qua notebook.
+
+```bash
+# Chạy trên local (nếu có GPU) hoặc Colab
+# Mở notebook và chạy:
+#   notebooks/mfrouter/01_mfrouter_training.ipynb
+
+# Config mặc định:
+#   - data_path → artifacts/routing/
+#   - text_dim: 1024 (Alibaba text-embedding-v3)
+#   - latent_dim: 128
+#   - epochs: 5
+```
+
 ---
 
 ## 7. Usage
@@ -498,6 +608,25 @@ python scripts/merge_and_export.py split \
     --train-ratio 0.7 \
     --dev-ratio 0.15 \
     --test-ratio 0.15
+
+# STEP 8: Convert to MFRouter routing format
+# Phase 1 (local - không cần GPU):
+python scripts/convert_to_routing_ds.py \
+    --input-dir artifacts/golden/splits_vni \
+    --output-dir artifacts/routing \
+    --skip-embeddings
+
+# Phase 2 (Colab):
+#   !pip install torch httpx
+#   !python scripts/convert_to_routing_ds.py --output-dir artifacts/routing --embeddings-only
+
+# STEP 9: Train MFRouter (Colab notebook)
+# notebooks/mfrouter/01_mfrouter_training.ipynb
+#   - Config: configs/model_config_train/mfrouter.yaml
+#   - Model saved to: saved_models/mfrouter/mfrouter_vni.pkl
+
+# STEP 10: Evaluate (Colab notebook)
+# notebooks/mfrouter/02_mfrouter_inference.ipynb
 ```
 
 ---
@@ -510,6 +639,9 @@ python scripts/merge_and_export.py split \
 4. **Colab cho Qwen3-4B** - local machine không chạy nổi 4B model
 5. **Không lưu keys trong code** - dùng `.env`
 6. **Resume mode** - `run_gemini_generation.py`, `run_local_generation.py`, và `judge_responses.py` đều hỗ trợ resume. Nếu output file đã tồn tại, sẽ tự động skip các query đã xử lý.
+7. **MFRouter Phase 1 (local)** - `convert_to_routing_ds.py --skip-embeddings` chạy local không cần torch/GPU.
+8. **MFRouter Phase 2 (Colab)** - `--embeddings-only` cần torch + httpx, chạy trên Colab để gọi Alibaba embedding API.
+9. **MFRouter Training (Colab)** - Notebook cần GPU, chạy trên Colab với notebook `01_mfrouter_training.ipynb`.
 
 ---
 
@@ -525,6 +657,7 @@ python scripts/merge_and_export.py split \
 | `scripts/streamlit_human_review.py` | Human review UI (Streamlit) |
 | `scripts/determine_difficulty.py` | Auto determine easy/hard |
 | `scripts/synthetic_hard_augmentation.py` | Synthetic hard query augmentation |
+| `scripts/convert_to_routing_ds.py` | Convert golden dataset → MFRouter routing format |
 | `scripts/merge_and_export.py` | Merge + Split only (export via determine_difficulty.py) |
 
 ## 10. Model Configuration (.env)
@@ -540,6 +673,9 @@ ALIBABA_QUERY_SUB2=qwen3.7-max (backup)
 # Response Generation (2 models)
 LOCAL_GENERATION_MODEL=Qwen/Qwen3-4B-Instruct-2507
 GEMINI_GENERATION_NAME=gemini-3.1-flash-lite
+
+# Embedding Model (for MFRouter)
+ALIBABA_EMBEDDING=text-embedding-v3
 ```
 
 ---

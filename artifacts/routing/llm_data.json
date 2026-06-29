@@ -1,0 +1,12 @@
+{
+  "local": {
+    "model": "Qwen/Qwen3-4B-Instruct-2507",
+    "feature": "Qwen3 4B Instruct, a Vietnamese-friendly open-source LLM running locally for safety routing. Handles toxicity detection, policy compliance, and content moderation."
+  },
+  "gemini": {
+    "model": "gemini-3.1-flash-lite",
+    "api_endpoint": "https://ws-v9y2oinbtzzm4ey9.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+    "service": "alibaba",
+    "feature": "Gemini 3.1 Flash Lite, a high-capability cloud LLM for safety routing. Strong at nuanced policy interpretation and context-aware content moderation."
+  }
+}

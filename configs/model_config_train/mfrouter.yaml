@@ -1,19 +1,17 @@
-# Config parameters for mfrouter training:
-
+# Config parameters for mfrouter training (Vietnamese safety routing)
 
 data_path:
-  query_data_train: 'data/example_data/query_data/default_query_train.jsonl'
-  query_data_test: 'data/example_data/query_data/default_query_test.jsonl'
-  query_embedding_data: 'data/example_data/routing_data/query_embeddings_longformer.pt'
-  routing_data_train: 'data/example_data/routing_data/default_routing_train_data.jsonl'
-  routing_data_test: 'data/example_data/routing_data/default_routing_test_data.jsonl'
-  llm_data: 'data/example_data/llm_candidates/default_llm.json'
+  query_data_train: 'artifacts/routing/query_data_train.jsonl'
+  query_data_test: 'artifacts/routing/query_data_test.jsonl'
+  query_embedding_data: 'artifacts/routing/query_embeddings.pt'
+  routing_data_train: 'artifacts/routing/routing_data_train.jsonl'
+  routing_data_test: 'artifacts/routing/routing_data_test.jsonl'
+  llm_data: 'artifacts/routing/llm_data.json'
   llm_embedding_data: 'data/example_data/llm_candidates/default_llm_embeddings.json'
 
 model_path:
   ini_model_path: ''
-  save_model_path: 'saved_models/mfrouter/mfrouter.pkl'
-
+  save_model_path: 'saved_models/mfrouter/mfrouter_vni.pkl'
 
 metric:
   weights:
@@ -22,13 +20,9 @@ metric:
     llm_judge: 0
 
 hparam:
-  latent_dim: 128         # dimension of model embedding v_m
-  text_dim: 768           # Longformer embedding dimension
-  lr: 0.001               # learning rate
-  epochs: 5               # number of training epochs
-  batch_size: 64          # batch size for training (larger = faster but more memory)
-  noise_alpha: 0.0        # optional noise added to query embeddings
-
-
-
-
+  latent_dim: 128
+  text_dim: 1024           # Alibaba text-embedding-v3 dimension
+  lr: 0.001
+  epochs: 5
+  batch_size: 64
+  noise_alpha: 0.0
