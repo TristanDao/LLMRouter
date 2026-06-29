@@ -624,8 +624,17 @@ Test model đã train với queries mới, dùng cùng embedding model như trai
 # Output:
 #   - Routing decision cho mỗi query (model_name: local/gemini)
 #   - Scores cho cả 2 models
+#   - Latency per query (encode + route, không tính load model):
+#     min / max / mean / median / p95 / <500ms check
 #   - Nếu --eval-test: top-1 accuracy trên test set
 ```
+
+**Latency measurement:**
+- Thời gian encode query với BAAI/bge-m3 + route qua MFRouter
+- Tính bằng `time.perf_counter()` (chính xác cao)
+- Có `torch.cuda.synchronize()` cho GPU
+- In thống kê: min, max, mean, median, p95
+- Check `<500ms` cho mỗi query (target SLA)
 
 ---
 

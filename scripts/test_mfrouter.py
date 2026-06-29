@@ -48,7 +48,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import statistics
 import sys
+import time
 from pathlib import Path
 from typing import List, Optional
 
@@ -131,27 +133,52 @@ def route_queries(
     emb_model,
     idx_to_model: List[str],
     device: str,
+    measure_latency: bool = True,
 ) -> List[dict]:
     if not queries:
         return []
 
-    print(f"\n  Encoding {len(queries)} query(ies)...")
-    embeddings = encode_bge_m3(queries, tokenizer, emb_model, device)
-
+    print(f"\n  Encoding + routing {len(queries)} query(ies)...")
     results = []
-    with torch.no_grad():
-        for q, emb in zip(queries, embeddings):
-            emb = emb.to(device).unsqueeze(0)
+    latencies_ms = []
+
+    for q in queries:
+        if device == "cuda":
+            torch.cuda.synchronize()
+        t0 = time.perf_counter()
+
+        emb_tensor = encode_bge_m3([q], tokenizer, emb_model, device)
+        emb = emb_tensor.to(device).unsqueeze(0)
+        with torch.no_grad():
             q_proj = mf_model.project_text(emb)
             scores = mf_model.score_all(q_proj)
             best_idx = int(torch.argmax(scores).item())
-            predicted = idx_to_model[best_idx]
-            all_scores = scores.cpu().tolist()
-            results.append({
-                "query": q,
-                "predicted_model": predicted,
-                "scores": dict(zip(idx_to_model, [round(s, 4) for s in all_scores])),
-            })
+        predicted = idx_to_model[best_idx]
+        all_scores = scores.cpu().tolist()
+
+        if device == "cuda":
+            torch.cuda.synchronize()
+        t1 = time.perf_counter()
+        latency_ms = (t1 - t0) * 1000.0
+        latencies_ms.append(latency_ms)
+
+        results.append({
+            "query": q,
+            "predicted_model": predicted,
+            "scores": dict(zip(idx_to_model, [round(s, 4) for s in all_scores])),
+            "latency_ms": round(latency_ms, 2),
+        })
+
+    if measure_latency and latencies_ms:
+        print(f"\n  Latency stats (encode + route, n={len(latencies_ms)}):")
+        print(f"    min:    {min(latencies_ms):.1f} ms")
+        print(f"    max:    {max(latencies_ms):.1f} ms")
+        print(f"    mean:   {statistics.mean(latencies_ms):.1f} ms")
+        if len(latencies_ms) > 1:
+            print(f"    median: {statistics.median(latencies_ms):.1f} ms")
+        print(f"    p95:    {sorted(latencies_ms)[int(0.95 * len(latencies_ms)) - 1]:.1f} ms")
+        all_under_500 = all(l < 500.0 for l in latencies_ms)
+        print(f"    <500ms: {'✅ YES' if all_under_500 else '❌ NO'}")
     return results
 
 
@@ -163,6 +190,8 @@ def print_results(results: List[dict]) -> None:
         print(f"\n  [{i}] Query: {r['query']}")
         print(f"      → Routed to: {r['predicted_model']}")
         print(f"      → Scores:    {r['scores']}")
+        if "latency_ms" in r:
+            print(f"      → Latency:   {r['latency_ms']} ms")
 
 
 def evaluate_on_test(
