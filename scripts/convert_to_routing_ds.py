@@ -315,7 +315,7 @@ def embed_local(
         from transformers import AutoTokenizer, AutoModel
     except ImportError as e:
         raise ImportError(
-            "transformers is required. pip install transformers sentence-transformers"
+            "transformers is required. pip install transformers"
         ) from e
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -324,18 +324,9 @@ def embed_local(
     model = AutoModel.from_pretrained(model_name, trust_remote_code=True).to(device)
     model.eval()
 
+    is_bge_m3 = "bge-m3" in model_name.lower() or "bge_m3" in model_name.lower()
+    is_e5 = "e5" in model_name.lower() and "multilingual" in model_name.lower()
     is_bge = "bge" in model_name.lower()
-    is_e5 = "e5" in model_name.lower()
-    is_m3 = "bge-m3" in model_name.lower() or "bge_m3" in model_name.lower()
-
-    def last_token_pool(last_hidden_states, attention_mask):
-        left_padding = (attention_mask[:, -1].sum(1) == attention_mask.shape[1])
-        if left_padding.all():
-            return last_hidden_states[:, -1]
-        non_pad = attention_mask.sum(1) - 1
-        idx = non_pad.clamp(min=0)
-        batch_idx = torch.arange(last_hidden_states.size(0), device=last_hidden_states.device)
-        return last_hidden_states[batch_idx, idx]
 
     results: List[Optional[np.ndarray]] = [None] * len(texts)
 
@@ -357,12 +348,18 @@ def embed_local(
 
             with torch.no_grad():
                 outputs = model(**encoded)
-                hidden = outputs.last_hidden_state
-                mask = encoded["attention_mask"]
-
-                if is_m3 or is_bge:
-                    pooled = last_token_pool(hidden, mask)
+                if is_bge_m3:
+                    # BGE-M3: use CLS token + normalize (official bge-m3 dense retrieval)
+                    hidden = outputs.last_hidden_state
+                    pooled = hidden[:, 0]
+                elif is_bge:
+                    # BGE-en: also CLS token + normalize
+                    hidden = outputs.last_hidden_state
+                    pooled = hidden[:, 0]
                 else:
+                    # Mean pooling fallback (for e5, mpnet, etc.)
+                    hidden = outputs.last_hidden_state
+                    mask = encoded["attention_mask"]
                     mask_expanded = mask.unsqueeze(-1).float()
                     pooled = (hidden * mask_expanded).sum(1) / mask_expanded.sum(1)
 
