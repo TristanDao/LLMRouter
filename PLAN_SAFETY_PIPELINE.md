@@ -487,21 +487,43 @@ python scripts/convert_to_routing_ds.py \
 #   artifacts/routing/unique_query_texts.txt                 (874 dòng → input cho Phase 2)
 ```
 
-**Phase 2 (Colab — cần torch + httpx):**
-```bash
-# Trên Colab sau khi clone repo:
-# !pip install torch httpx
-# Đảm bảo .env có ALIBABA_URL, ALIBABA_API_KEY, ALIBABA_EMBEDDING
+**Phase 2 (Colab — torch + GPU):**
 
+Có 2 mode cho embedding (chọn 1):
+
+| Mode | Model | Khi nào dùng |
+|------|-------|--------------|
+| `local` (khuyến nghị) | `BAAI/bge-m3` (1024-dim) | Colab L4 GPU, multilingual Vi+En |
+| `api` | Alibaba `text-embedding-v3` (1024-dim) | Không có GPU, muốn dùng API |
+
+```bash
+# Local mode (khuyến nghị - dùng BAAI/bge-m3 trên Colab L4):
+!pip install -q transformers
 !python scripts/convert_to_routing_ds.py \
     --output-dir artifacts/routing \
-    --embeddings-only
+    --embeddings-only \
+    --mode local \
+    --embedding-model BAAI/bge-m3
 
-# Output Phase 2:
-#   artifacts/routing/query_embeddings.pt          (1024-dim, 874 vectors)
-#   Backfill embedding_id vào routing_data JSONL
-#   Backfill embedding_id vào query_data JSONL
+# API mode (Alibaba):
+!python scripts/convert_to_routing_ds.py \
+    --output-dir artifacts/routing \
+    --embeddings-only \
+    --mode api
 ```
+
+**Output Phase 2:**
+```
+  artifacts/routing/query_embeddings.pt          (1024-dim, 874 vectors)
+  Backfill embedding_id vào routing_data JSONL
+  Backfill embedding_id vào query_data JSONL
+```
+
+**Embedding models hỗ trợ (multilingual, tốt cho Vi+En):**
+- `BAAI/bge-m3` — 568M params, 1024-dim, 100+ languages (mặc định)
+- `intfloat/multilingual-e5-large` — 560M params, 1024-dim
+- `intfloat/multilingual-e5-base` — 278M params, 768-dim
+- `sentence-transformers/paraphrase-multilingual-mpnet-base-v2` — 278M, 768-dim
 
 **Performance mapping:**
 ```
@@ -640,8 +662,9 @@ python scripts/convert_to_routing_ds.py \
 5. **Không lưu keys trong code** - dùng `.env`
 6. **Resume mode** - `run_gemini_generation.py`, `run_local_generation.py`, và `judge_responses.py` đều hỗ trợ resume. Nếu output file đã tồn tại, sẽ tự động skip các query đã xử lý.
 7. **MFRouter Phase 1 (local)** - `convert_to_routing_ds.py --skip-embeddings` chạy local không cần torch/GPU.
-8. **MFRouter Phase 2 (Colab)** - `--embeddings-only` cần torch + httpx, chạy trên Colab để gọi Alibaba embedding API.
+8. **MFRouter Phase 2 (Colab)** - `--embeddings-only --mode local` dùng `BAAI/bge-m3` (1024-dim, multilingual Vi+En), chạy trên Colab L4 GPU. Mode `api` dùng Alibaba `text-embedding-v3` (1024-dim) khi không có GPU.
 9. **MFRouter Training (Colab)** - Notebook cần GPU, chạy trên Colab với notebook `01_mfrouter_training.ipynb`.
+10. **Embedding model consistency** - Inference cũng phải dùng cùng embedding model như training (vd: `BAAI/bge-m3`). Cần wrap lại `route_single` để encode query bằng local model trước khi routing.
 
 ---
 

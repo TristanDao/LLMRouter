@@ -239,7 +239,7 @@ def convert_splits(input_dir: str, output_dir: str) -> None:
 def embed_alibaba(
     texts: List[str],
     model_name: str = "text-embedding-v3",
-    batch_size: int = 32,
+    batch_size: int = 10,
 ) -> List[Optional[np.ndarray]]:
     httpx = _maybe_import_httpx()
     if httpx is None:
@@ -300,7 +300,84 @@ def embed_alibaba(
     return results
 
 
-def run_embeddings_only(output_dir: str) -> None:
+def embed_local(
+    texts: List[str],
+    model_name: str = "BAAI/bge-m3",
+    batch_size: int = 16,
+    max_length: int = 512,
+) -> List[Optional[np.ndarray]]:
+    """Local embedding via HuggingFace transformers (Colab GPU)."""
+    torch = _maybe_import_torch()
+    if torch is None:
+        raise ImportError("torch is required for local embeddings")
+
+    try:
+        from transformers import AutoTokenizer, AutoModel
+    except ImportError as e:
+        raise ImportError(
+            "transformers is required. pip install transformers sentence-transformers"
+        ) from e
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"  Loading {model_name} on {device}...")
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModel.from_pretrained(model_name, trust_remote_code=True).to(device)
+    model.eval()
+
+    is_bge = "bge" in model_name.lower()
+    is_e5 = "e5" in model_name.lower()
+    is_m3 = "bge-m3" in model_name.lower() or "bge_m3" in model_name.lower()
+
+    def last_token_pool(last_hidden_states, attention_mask):
+        left_padding = (attention_mask[:, -1].sum(1) == attention_mask.shape[1])
+        if left_padding.all():
+            return last_hidden_states[:, -1]
+        non_pad = attention_mask.sum(1) - 1
+        idx = non_pad.clamp(min=0)
+        batch_idx = torch.arange(last_hidden_states.size(0), device=last_hidden_states.device)
+        return last_hidden_states[batch_idx, idx]
+
+    results: List[Optional[np.ndarray]] = [None] * len(texts)
+
+    for i in range(0, len(texts), batch_size):
+        batch_texts = texts[i : i + batch_size]
+        if is_e5:
+            prefixed = [f"query: {t}" for t in batch_texts]
+        else:
+            prefixed = list(batch_texts)
+
+        try:
+            encoded = tokenizer(
+                prefixed,
+                padding=True,
+                truncation=True,
+                max_length=max_length,
+                return_tensors="pt",
+            ).to(device)
+
+            with torch.no_grad():
+                outputs = model(**encoded)
+                hidden = outputs.last_hidden_state
+                mask = encoded["attention_mask"]
+
+                if is_m3 or is_bge:
+                    pooled = last_token_pool(hidden, mask)
+                else:
+                    mask_expanded = mask.unsqueeze(-1).float()
+                    pooled = (hidden * mask_expanded).sum(1) / mask_expanded.sum(1)
+
+                pooled = torch.nn.functional.normalize(pooled, p=2, dim=1)
+                pooled = pooled.cpu().numpy().astype(np.float32)
+
+            for j, vec in enumerate(pooled):
+                results[i + j] = vec
+        except Exception as e:
+            print(f"  Local embedding error at batch {i // batch_size + 1}: {e}")
+
+    return results
+
+
+def run_embeddings_only(output_dir: str, mode: str = "api", model_name: str = "") -> None:
     torch = _maybe_import_torch()
     if torch is None:
         print("ERROR: torch is required for Phase 2. Run this on Colab with GPU.")
@@ -315,10 +392,17 @@ def run_embeddings_only(output_dir: str) -> None:
     query_texts = read_lines(texts_path)
     print(f"Read {len(query_texts)} unique query texts from {texts_path}")
 
-    model_name = env_str("ALIBABA_EMBEDDING", "text-embedding-v3")
-    print(f"Embedding model: {model_name}")
+    if not model_name:
+        if mode == "local":
+            model_name = "BAAI/bge-m3"
+        else:
+            model_name = env_str("ALIBABA_EMBEDDING", "text-embedding-v3")
+    print(f"Mode: {mode}, Model: {model_name}")
 
-    emb_list = embed_alibaba(query_texts, model_name=model_name)
+    if mode == "local":
+        emb_list = embed_local(query_texts, model_name=model_name)
+    else:
+        emb_list = embed_alibaba(query_texts, model_name=model_name)
 
     # Build embedding dict and save .pt
     embedding_dict = {}
@@ -336,6 +420,7 @@ def run_embeddings_only(output_dir: str) -> None:
     pt_path = os.path.join(output_dir, "query_embeddings.pt")
     torch.save(embedding_dict, pt_path)
     print(f"Saved {len(embedding_dict)} embeddings to {pt_path} (dim={dim}, failed={fail_count})")
+    return dim
 
     # Backfill embedding_id into routing JSONL files
     splits = ["train", "test", "dev"]
@@ -393,12 +478,14 @@ def main() -> int:
                         help="Phase 1 only: convert JSONL, skip embedding generation")
     parser.add_argument("--embeddings-only", action="store_true",
                         help="Phase 2 only: generate embeddings from existing text file")
-    parser.add_argument("--embedding-model", default=env_str("ALIBABA_EMBEDDING", "text-embedding-v3"),
-                        help="Embedding model name")
+    parser.add_argument("--embedding-model", default="",
+                        help="Embedding model name (HF model for local, Alibaba model for api)")
+    parser.add_argument("--mode", choices=["api", "local"], default="local",
+                        help="Embedding mode: 'local' (HF model on GPU) or 'api' (Alibaba)")
     args = parser.parse_args()
 
     if args.embeddings_only:
-        return run_embeddings_only(args.output_dir)
+        return run_embeddings_only(args.output_dir, mode=args.mode, model_name=args.embedding_model)
 
     if args.input_dir is None:
         parser.error("--input-dir is required for Phase 1")
@@ -406,7 +493,7 @@ def main() -> int:
     convert_splits(args.input_dir, args.output_dir)
 
     if not args.skip_embeddings:
-        return run_embeddings_only(args.output_dir)
+        return run_embeddings_only(args.output_dir, mode=args.mode, model_name=args.embedding_model)
 
     return 0
 

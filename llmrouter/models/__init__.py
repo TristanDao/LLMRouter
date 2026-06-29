@@ -1,8 +1,15 @@
 from .meta_router import MetaRouter
 from .base_trainer import BaseTrainer
 
-from .smallest_llm import SmallestLLM
-from .largest_llm import LargestLLM
+try:
+    from .smallest_llm import SmallestLLM
+except Exception:
+    SmallestLLM = None
+
+try:
+    from .largest_llm import LargestLLM
+except Exception:
+    LargestLLM = None
 
 from .knnrouter import KNNRouter
 from .knnrouter import KNNRouterTrainer
@@ -19,14 +26,26 @@ from .mfrouter import MFRouterTrainer
 from .elorouter import EloRouter
 from .elorouter import EloRouterTrainer
 
-from .automix import AutomixRouter
-from .automix import AutomixRouterTrainer
+try:
+    from .automix import AutomixRouter
+    from .automix import AutomixRouterTrainer
+except Exception:
+    AutomixRouter = None
+    AutomixRouterTrainer = None
 
-from .routerdc import DCRouter
-from .routerdc import DCTrainer
+try:
+    from .routerdc import DCRouter
+    from .routerdc import DCTrainer
+except Exception:
+    DCRouter = None
+    DCTrainer = None
 
-from .hybrid_llm import HybridLLMRouter
-from .hybrid_llm import HybridLLMTrainer
+try:
+    from .hybrid_llm import HybridLLMRouter
+    from .hybrid_llm import HybridLLMTrainer
+except Exception:
+    HybridLLMRouter = None
+    HybridLLMTrainer = None
 
 try:
     from .graphrouter import GraphRouter
