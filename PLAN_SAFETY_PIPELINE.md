@@ -573,12 +573,42 @@ Sau khi có routing data + embeddings, train MFRouter bằng script `train_mfrou
 Test model đã train với queries mới, dùng cùng embedding model như training.
 
 ```bash
-# Test trên Colab GPU
+# Test 5 sample queries mặc định
 !python scripts/test_mfrouter.py \
     --config configs/model_config_train/mfrouter.yaml \
     --model-path saved_models/mfrouter/mfrouter_vni.pkl \
     --embedding-model BAAI/bge-m3 \
     --device cuda
+
+# Test 1 custom query
+!python scripts/test_mfrouter.py \
+    --config configs/model_config_train/mfrouter.yaml \
+    --model-path saved_models/mfrouter/mfrouter_vni.pkl \
+    --device cuda \
+    --text "Vin nô đúng là lũ ngu xuẩn."
+
+# Test nhiều custom queries (--text lặp lại)
+!python scripts/test_mfrouter.py \
+    --config configs/model_config_train/mfrouter.yaml \
+    --model-path saved_models/mfrouter/mfrouter_vni.pkl \
+    --device cuda \
+    --text "Câu hỏi 1" \
+    --text "Câu hỏi 2" \
+    --text "Câu hỏi 3"
+
+# Test queries từ file (mỗi dòng 1 query)
+!python scripts/test_mfrouter.py \
+    --config configs/model_config_train/mfrouter.yaml \
+    --model-path saved_models/mfrouter/mfrouter_vni.pkl \
+    --device cuda \
+    --text-file my_queries.txt
+
+# Evaluate trên test set (cộng dồn với custom queries)
+!python scripts/test_mfrouter.py \
+    --config configs/model_config_train/mfrouter.yaml \
+    --model-path saved_models/mfrouter/mfrouter_vni.pkl \
+    --device cuda \
+    --eval-test
 
 # Options
 --config          configs/model_config_train/mfrouter.yaml
@@ -587,11 +617,14 @@ Test model đã train với queries mới, dùng cùng embedding model như trai
 --routing-data    artifacts/routing/routing_data_train.jsonl
 --text-dim        1024                 # PHẢI khớp training
 --latent-dim      128
+--text            "query"              # Có thể truyền nhiều lần
+--text-file       <path>               # Mỗi dòng 1 query
+--eval-test                           # Đo accuracy trên test set
 
 # Output:
-#   - Inference trên 5 test queries mặc định
-#   - Top-1 accuracy trên test set (nếu có query_data_test.jsonl)
-#   - Sample predictions
+#   - Routing decision cho mỗi query (model_name: local/gemini)
+#   - Scores cho cả 2 models
+#   - Nếu --eval-test: top-1 accuracy trên test set
 ```
 
 ---
