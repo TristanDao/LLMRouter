@@ -2,7 +2,7 @@
 
 > **Ngày tạo:** 2026-06-17
 > **Ngày cập nhật:** 2026-06-29
-> **Trạng thái:** Step 8 - Phase 1 done, chờ Phase 2 trên Colab
+> **Trạng thái:** Step 8 done (Phase 1+2), Step 9 (train) ready on Colab
 
 ---
 
@@ -18,6 +18,7 @@
 9. [Files](#9-files)
 10. [Model Configuration](#10-model-configuration)
 11. [Data Format](#11-data-format-json-fields)
+12. [Colab Workflow](#12-colab-workflow-step-8--10)
 
 ---
 
@@ -60,9 +61,9 @@ Tạo golden dataset để train ML router cho Safety Router.
 
 | # | Task | Priority | Ghi chú |
 |---|------|----------|---------|
-| 9 | Phase 2: Generate embeddings (Colab) | Cao | Alibaba text-embedding-v3, 874 queries |
-| 10 | Train MFRouter (Colab) | Cao | Notebook/Colab |
-| 11 | Evaluate MFRouter | Trung | Test accuracy, confusion matrix |
+| 9 | Phase 2: Generate embeddings (Colab) | Cao | BAAI/bge-m3 (local GPU), 874 queries |
+| 10 | Train MFRouter (Colab) | Cao | `scripts/train_mfrouter.py` |
+| 11 | Test MFRouter (Colab) | Trung | `scripts/test_mfrouter.py` |
 
 ---
 
@@ -187,17 +188,19 @@ Tạo golden dataset để train ML router cho Safety Router.
 └─────────────────────────────────────────────────────────────────┘
                                  ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│                 STEP 9: Train MFRouter                             │
-│  Notebook: notebooks/mfrouter/01_mfrouter_training.ipynb          │
+│                 STEP 9: Train MFRouter (Colab)                     │
+│  Script: scripts/train_mfrouter.py                                 │
 │  Config: configs/model_config_train/mfrouter.yaml                │
 │  Model: Matrix Factorization Router (latent_dim=128)              │
 │  Output: saved_models/mfrouter/mfrouter_vni.pkl                   │
+│  Auto-evaluate test accuracy sau khi train                        │
 └─────────────────────────────────────────────────────────────────┘
-                                 ↓
+                                  ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│               STEP 10: Evaluate MFRouter                           │
-│  Notebook: notebooks/mfrouter/02_mfrouter_inference.ipynb         │
-│  Metrics: Top-1 accuracy, per-policy routing table                │
+│               STEP 10: Test MFRouter (Colab)                        │
+│  Script: scripts/test_mfrouter.py                                  │
+│  Encode queries với BAAI/bge-m3, route, đo top-1 accuracy        │
+│  Cùng embedding model như training                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -540,18 +543,55 @@ Có 2 mode cho embedding (chọn 1):
 
 ### 6.10 MFRouter Training (STEP 9)
 
-Sau khi có routing data, train MFRouter qua notebook.
+Sau khi có routing data + embeddings, train MFRouter bằng script `train_mfrouter.py`. **Chạy trên Colab (GPU).**
 
 ```bash
-# Chạy trên local (nếu có GPU) hoặc Colab
-# Mở notebook và chạy:
-#   notebooks/mfrouter/01_mfrouter_training.ipynb
+# Train trên Colab GPU
+!python scripts/train_mfrouter.py \
+    --config configs/model_config_train/mfrouter.yaml \
+    --device cuda
 
-# Config mặc định:
+# Options
+--config  configs/model_config_train/mfrouter.yaml
+--device  cuda|cpu
+--no-eval  # skip test evaluation
+
+# Config mặc định (mfrouter.yaml):
 #   - data_path → artifacts/routing/
-#   - text_dim: 1024 (Alibaba text-embedding-v3)
+#   - text_dim: 1024 (BAAI/bge-m3 hoặc Alibaba)
 #   - latent_dim: 128
 #   - epochs: 5
+#   - batch_size: 64
+#   - lr: 0.001
+
+# Model saved: saved_models/mfrouter/mfrouter_vni.pkl
+# Auto-evaluate accuracy trên test set sau khi train
+```
+
+### 6.11 MFRouter Test / Inference (STEP 10)
+
+Test model đã train với queries mới, dùng cùng embedding model như training.
+
+```bash
+# Test trên Colab GPU
+!python scripts/test_mfrouter.py \
+    --config configs/model_config_train/mfrouter.yaml \
+    --model-path saved_models/mfrouter/mfrouter_vni.pkl \
+    --embedding-model BAAI/bge-m3 \
+    --device cuda
+
+# Options
+--config          configs/model_config_train/mfrouter.yaml
+--model-path      saved_models/mfrouter/mfrouter_vni.pkl
+--embedding-model BAAI/bge-m3          # PHẢI khớp với training
+--routing-data    artifacts/routing/routing_data_train.jsonl
+--text-dim        1024                 # PHẢI khớp training
+--latent-dim      128
+
+# Output:
+#   - Inference trên 5 test queries mặc định
+#   - Top-1 accuracy trên test set (nếu có query_data_test.jsonl)
+#   - Sample predictions
 ```
 
 ---
@@ -638,17 +678,25 @@ python scripts/convert_to_routing_ds.py \
     --output-dir artifacts/routing \
     --skip-embeddings
 
-# Phase 2 (Colab):
-#   !pip install torch httpx
-#   !python scripts/convert_to_routing_ds.py --output-dir artifacts/routing --embeddings-only
+# Phase 2 (Colab L4 GPU):
+#   !pip install -q transformers
+#   !python scripts/convert_to_routing_ds.py \
+#       --output-dir artifacts/routing \
+#       --embeddings-only \
+#       --mode local \
+#       --embedding-model BAAI/bge-m3
 
-# STEP 9: Train MFRouter (Colab notebook)
-# notebooks/mfrouter/01_mfrouter_training.ipynb
-#   - Config: configs/model_config_train/mfrouter.yaml
-#   - Model saved to: saved_models/mfrouter/mfrouter_vni.pkl
+# STEP 9: Train MFRouter (Colab GPU)
+python scripts/train_mfrouter.py \
+    --config configs/model_config_train/mfrouter.yaml \
+    --device cuda
 
-# STEP 10: Evaluate (Colab notebook)
-# notebooks/mfrouter/02_mfrouter_inference.ipynb
+# STEP 10: Test MFRouter (Colab GPU)
+python scripts/test_mfrouter.py \
+    --config configs/model_config_train/mfrouter.yaml \
+    --model-path saved_models/mfrouter/mfrouter_vni.pkl \
+    --embedding-model BAAI/bge-m3 \
+    --device cuda
 ```
 
 ---
@@ -663,8 +711,9 @@ python scripts/convert_to_routing_ds.py \
 6. **Resume mode** - `run_gemini_generation.py`, `run_local_generation.py`, và `judge_responses.py` đều hỗ trợ resume. Nếu output file đã tồn tại, sẽ tự động skip các query đã xử lý.
 7. **MFRouter Phase 1 (local)** - `convert_to_routing_ds.py --skip-embeddings` chạy local không cần torch/GPU.
 8. **MFRouter Phase 2 (Colab)** - `--embeddings-only --mode local` dùng `BAAI/bge-m3` (1024-dim, multilingual Vi+En), chạy trên Colab L4 GPU. Mode `api` dùng Alibaba `text-embedding-v3` (1024-dim) khi không có GPU.
-9. **MFRouter Training (Colab)** - Notebook cần GPU, chạy trên Colab với notebook `01_mfrouter_training.ipynb`.
-10. **Embedding model consistency** - Inference cũng phải dùng cùng embedding model như training (vd: `BAAI/bge-m3`). Cần wrap lại `route_single` để encode query bằng local model trước khi routing.
+9. **MFRouter Training (Colab)** - Dùng `train_mfrouter.py` (thay vì notebook vì Colab không chạy notebook trực tiếp). Output: `saved_models/mfrouter/mfrouter_vni.pkl`.
+10. **MFRouter Test (Colab)** - Dùng `test_mfrouter.py` với cùng `BAAI/bge-m3` như training. Auto đo top-1 accuracy trên test set.
+11. **Embedding model consistency** - Training và inference PHẢI dùng cùng model (vd: `BAAI/bge-m3`, 1024-dim) và cùng `text_dim` trong config.
 
 ---
 
@@ -681,6 +730,8 @@ python scripts/convert_to_routing_ds.py \
 | `scripts/determine_difficulty.py` | Auto determine easy/hard |
 | `scripts/synthetic_hard_augmentation.py` | Synthetic hard query augmentation |
 | `scripts/convert_to_routing_ds.py` | Convert golden dataset → MFRouter routing format |
+| `scripts/train_mfrouter.py` | Train MFRouter (Colab) |
+| `scripts/test_mfrouter.py` | Test MFRouter với bge-m3 (Colab) |
 | `scripts/merge_and_export.py` | Merge + Split only (export via determine_difficulty.py) |
 
 ## 10. Model Configuration (.env)
@@ -911,3 +962,97 @@ Without it, queries with same query_id from different providers would overwrite 
 - `difficulty=hard`: local_correct=False AND gemini_correct=True
 - Records where both models agree on wrong or uncertain are excluded
 - `judge_consensus` is the normalized consensus from Step 5/5a (`pass|fail|uncertain`)
+
+---
+
+## 12. Colab Workflow (Step 8 → 10)
+
+Toàn bộ training + test chạy trên Colab. **Không dùng notebook** (Colab không chạy trực tiếp được).
+
+### 12.1 Setup ban đầu
+
+```python
+import os
+import sys
+from pathlib import Path
+
+# 1. Clone repo
+if not os.path.exists("LLMRouter"):
+    !git clone <REPO_URL>
+    %cd LLMRouter
+
+PROJECT_ROOT = Path.cwd().resolve()
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+# 2. Install
+!pip install -q torch transformers pandas numpy pyyaml
+
+import torch
+print(f"GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'}")
+```
+
+### 12.2 Upload files từ local
+
+Vì `golden_dataset_augmented_vni.jsonl` lớn, cần upload lên Google Drive rồi mount:
+
+```python
+from google.colab import drive
+drive.mount("/content/drive")
+
+# Option A: Copy từ Drive (nếu đã upload lên Drive)
+!cp -r /content/drive/MyDrive/LLMRouter/artifacts/golden /content/LLMRouter/artifacts/
+!cp -r /content/drive/MyDrive/LLMRouter/artifacts/routing /content/LLMRouter/artifacts/
+
+# Option B: Tạo trực tiếp routing files từ splits (Phase 1 chạy local rồi upload)
+# artifacts/routing/routing_data_*.jsonl
+# artifacts/routing/query_data_*.jsonl
+# artifacts/routing/unique_query_texts.txt
+# artifacts/routing/llm_data.json
+```
+
+### 12.3 Phase 2: Generate embeddings (BAAI/bge-m3)
+
+```bash
+!python scripts/convert_to_routing_ds.py \
+    --output-dir artifacts/routing \
+    --embeddings-only \
+    --mode local \
+    --embedding-model BAAI/bge-m3
+```
+
+### 12.4 STEP 9: Train MFRouter
+
+```bash
+!python scripts/train_mfrouter.py \
+    --config configs/model_config_train/mfrouter.yaml \
+    --device cuda
+```
+
+Output: `saved_models/mfrouter/mfrouter_vni.pkl` + test accuracy.
+
+### 12.5 STEP 10: Test MFRouter
+
+```bash
+!python scripts/test_mfrouter.py \
+    --config configs/model_config_train/mfrouter.yaml \
+    --model-path saved_models/mfrouter/mfrouter_vni.pkl \
+    --embedding-model BAAI/bge-m3 \
+    --device cuda
+```
+
+Output: routing decisions cho 5 test queries + top-1 accuracy trên test set.
+
+### 12.6 Download model về local (optional)
+
+```python
+from google.colab import files
+files.download("saved_models/mfrouter/mfrouter_vni.pkl")
+```
+
+### 12.7 Lưu ý quan trọng
+
+- **Colab L4 GPU** có ~24GB VRAM — đủ chạy bge-m3 (568M params, ~2.27GB FP32) + training
+- **Mỗi Colab session ~12h** — nếu training lâu, lưu checkpoint lên Drive định kỳ
+- **Embedding model phải khớp** giữa training và test (cùng `BAAI/bge-m3` 1024-dim)
+- Nếu dùng LLM embedding API (Alibaba) thay vì local, dùng `--mode api` ở Phase 2
